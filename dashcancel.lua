@@ -5,9 +5,8 @@ local PG = LP:WaitForChild("PlayerGui")
 
 local Services = ReplicatedStorage.Packages._Index["sleitnick_knit@1.7.0"].knit.Services
 local dashRemote = Services.StyleService.RF.RequestSpecialCallback
-local jumpRemote = Services.BallService.RF.Jump
 
--- Create button
+-- UI
 local gui = Instance.new("ScreenGui")
 gui.Name = "DashCancelUI"
 gui.ResetOnSpawn = false
@@ -24,7 +23,7 @@ btn.TextSize = 16
 btn.Parent = gui
 Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
 
--- Make draggable
+-- Draggable
 local dragging, dragStart, startPos
 btn.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -47,25 +46,23 @@ game:GetService("UserInputService").InputEnded:Connect(function(input)
 	end
 end)
 
--- Dash Cancel function
+-- Dash + Jump
 btn.MouseButton1Click:Connect(function()
 	-- Fire Dash
 	pcall(function()
 		dashRemote:InvokeServer()
 	end)
 
-	-- Jump almost instantly after (try both true and false)
+	-- Force jump the normal Roblox way
 	task.delay(0.03, function()
-		pcall(function()
-			jumpRemote:InvokeServer(true)
-		end)
-	end)
-
-	task.delay(0.06, function()
-		pcall(function()
-			jumpRemote:InvokeServer(false)
-		end)
+		local char = LP.Character
+		if char then
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum.Jump = true
+			end
+		end
 	end)
 end)
 
-print("Dash Cancel Button loaded")
+print("Dash Cancel (Humanoid Jump) loaded")
