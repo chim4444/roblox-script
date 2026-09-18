@@ -1,4 +1,4 @@
--- TIMELESS Script Hub
+-- TIMELESS Script Hub (Lag Reduced)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -34,12 +34,14 @@ local bloxyColaESP = false
 local crateESP = false
 local autoCarry = false
 local autoRevive = false
+local autoWirebox = false
 local fullbrightEnabled = false
 local noFogEnabled = false
 
 local highlights = {}
 local billboards = {}
 local itemHighlights = {}
+local completedWireboxes = {}
 
 -- Save original lighting
 local oldAmbient = Lighting.Ambient
@@ -104,6 +106,30 @@ local function applyNoFog(state)
 	end
 end
 
+-- ===================== AUTO WIREBOX =====================
+local function completeAllWireboxes()
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if obj.Name == "CompleteObjective" and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
+			local parent = obj.Parent
+			if parent and parent.Name == "Wirebox" then
+				pcall(function()
+					obj:FireServer()
+				end)
+				completedWireboxes[parent] = true
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(2) -- slower
+		if autoWirebox then
+			completeAllWireboxes()
+		end
+	end
+end)
+
 -- ===================== ITEM ESP =====================
 local function clearItemESP()
 	for obj, h in pairs(itemHighlights) do
@@ -113,7 +139,6 @@ local function clearItemESP()
 end
 
 local function updateItemESP()
-	-- Remove highlights for objects that no longer exist
 	for obj, h in pairs(itemHighlights) do
 		if not obj or not obj.Parent then
 			pcall(function() h:Destroy() end)
@@ -128,19 +153,23 @@ local function updateItemESP()
 			local color = nil
 
 			if gasESP and (name:find("gascanister") or name:find("gas canister") or name:find("gas_canister")) then
-				color = Color3.fromRGB(255, 170, 0) -- Orange
+				color = Color3.fromRGB(255, 170, 0)
 			elseif medkitESP and (name:find("medkit") or name:find("med kit")) then
-				color = Color3.fromRGB(0, 255, 100) -- Green
+				color = Color3.fromRGB(0, 255, 100)
 			elseif slateskinESP and (name:find("slateskin") or name:find("slate skin") or name:find("slateskinpotion")) then
-				color = Color3.fromRGB(180, 100, 255) -- Purple
+				color = Color3.fromRGB(180, 100, 255)
 			elseif wireboxESP and name == "wirebox" then
-				color = Color3.fromRGB(0, 220, 255) -- Cyan
+				if completedWireboxes[obj] or not obj:FindFirstChild("CompleteObjective") then
+					color = Color3.fromRGB(0, 255, 80)
+				else
+					color = Color3.fromRGB(0, 220, 255)
+				end
 			elseif healingPotionESP and (name:find("healingpotion") or name:find("healing potion")) then
-				color = Color3.fromRGB(100, 255, 180) -- Light green
+				color = Color3.fromRGB(100, 255, 180)
 			elseif bloxyColaESP and (name:find("bloxycola") or name:find("bloxy cola")) then
-				color = Color3.fromRGB(255, 80, 80) -- Red
+				color = Color3.fromRGB(255, 80, 80)
 			elseif crateESP and name == "crate" then
-				color = Color3.fromRGB(255, 200, 50) -- Yellow
+				color = Color3.fromRGB(255, 200, 50)
 			end
 
 			if color then
@@ -154,13 +183,19 @@ local function updateItemESP()
 				highlight.Parent = obj
 				itemHighlights[obj] = highlight
 			end
+		elseif itemHighlights[obj] and name == "wirebox" then
+			local h = itemHighlights[obj]
+			if completedWireboxes[obj] or not obj:FindFirstChild("CompleteObjective") then
+				h.FillColor = Color3.fromRGB(0, 255, 80)
+				h.OutlineColor = Color3.fromRGB(0, 255, 80)
+			end
 		end
 	end
 end
 
 task.spawn(function()
 	while true do
-		task.wait(0.8)
+		task.wait(2.5) -- slower
 		updateItemESP()
 	end
 end)
@@ -276,7 +311,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(0.3)
+		task.wait(1) -- slower
 		updateESP()
 	end
 end)
@@ -315,7 +350,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(0.5)
+		task.wait(0.8)
 		if autoCarry and RequestCarry then
 			local target = getClosestDowned()
 			if target then
@@ -327,7 +362,7 @@ end)
 
 task.spawn(function()
 	while true do
-		task.wait(0.5)
+		task.wait(0.8)
 		if autoRevive and RequestRevive then
 			local target = getClosestDowned()
 			if target then
@@ -339,8 +374,8 @@ end)
 
 -- ===================== UI =====================
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 400, 0, 360)
-Main.Position = UDim2.new(0.5, -200, 0.5, -180)
+Main.Size = UDim2.new(0, 400, 0, 380)
+Main.Position = UDim2.new(0.5, -200, 0.5, -190)
 Main.BackgroundColor3 = BG
 Main.BorderSizePixel = 0
 Main.Parent = UI
@@ -540,6 +575,7 @@ local function switchTab(name)
 	elseif name == "Survivor" then
 		makeToggle("Auto Carry", autoCarry, function(v) autoCarry = v end)
 		makeToggle("Auto Revive", autoRevive, function(v) autoRevive = v end)
+		makeToggle("Auto Wirebox", autoWirebox, function(v) autoWirebox = v end)
 
 	elseif name == "Visuals" then
 		makeToggle("Player ESP", espEnabled, function(v)
@@ -610,4 +646,4 @@ for i, name in ipairs(tabs) do
 end
 
 switchTab("Survivor")
-print("TIMELESS Hub loaded - new item ESPs + auto remove")
+print("TIMELESS Hub loaded - Reduced lag version")
