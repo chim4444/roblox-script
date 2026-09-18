@@ -29,6 +29,9 @@ local gasESP = false
 local medkitESP = false
 local wireboxESP = false
 local slateskinESP = false
+local healingPotionESP = false
+local bloxyColaESP = false
+local crateESP = false
 local autoCarry = false
 local autoRevive = false
 local fullbrightEnabled = false
@@ -103,19 +106,25 @@ end
 
 -- ===================== ITEM ESP =====================
 local function clearItemESP()
-	for _, h in pairs(itemHighlights) do
+	for obj, h in pairs(itemHighlights) do
 		pcall(function() h:Destroy() end)
 	end
 	table.clear(itemHighlights)
 end
 
 local function updateItemESP()
-	clearItemESP()
+	-- Remove highlights for objects that no longer exist
+	for obj, h in pairs(itemHighlights) do
+		if not obj or not obj.Parent then
+			pcall(function() h:Destroy() end)
+			itemHighlights[obj] = nil
+		end
+	end
 
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		local name = string.lower(obj.Name)
 
-		if obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart") then
+		if (obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart")) and not itemHighlights[obj] then
 			local color = nil
 
 			if gasESP and (name:find("gascanister") or name:find("gas canister") or name:find("gas_canister")) then
@@ -126,9 +135,15 @@ local function updateItemESP()
 				color = Color3.fromRGB(180, 100, 255) -- Purple
 			elseif wireboxESP and name == "wirebox" then
 				color = Color3.fromRGB(0, 220, 255) -- Cyan
+			elseif healingPotionESP and (name:find("healingpotion") or name:find("healing potion")) then
+				color = Color3.fromRGB(100, 255, 180) -- Light green
+			elseif bloxyColaESP and (name:find("bloxycola") or name:find("bloxy cola")) then
+				color = Color3.fromRGB(255, 80, 80) -- Red
+			elseif crateESP and name == "crate" then
+				color = Color3.fromRGB(255, 200, 50) -- Yellow
 			end
 
-			if color and not itemHighlights[obj] then
+			if color then
 				local highlight = Instance.new("Highlight")
 				highlight.Adornee = obj
 				highlight.FillColor = color
@@ -145,7 +160,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(1)
+		task.wait(0.8)
 		updateItemESP()
 	end
 end)
@@ -324,8 +339,8 @@ end)
 
 -- ===================== UI =====================
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 400, 0, 300)
-Main.Position = UDim2.new(0.5, -200, 0.5, -150)
+Main.Size = UDim2.new(0, 400, 0, 360)
+Main.Position = UDim2.new(0.5, -200, 0.5, -180)
 Main.BackgroundColor3 = BG
 Main.BorderSizePixel = 0
 Main.Parent = UI
@@ -411,18 +426,34 @@ sidebar.BorderSizePixel = 0
 sidebar.Parent = Main
 Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0, 8)
 
-local content = Instance.new("Frame")
+local content = Instance.new("ScrollingFrame")
 content.Size = UDim2.new(1, -125, 1, -50)
 content.Position = UDim2.new(0, 115, 0, 42)
 content.BackgroundTransparency = 1
+content.BorderSizePixel = 0
+content.ScrollBarThickness = 3
+content.ScrollBarImageColor3 = ACCENT
+content.CanvasSize = UDim2.new(0, 0, 0, 0)
+content.AutomaticCanvasSize = Enum.AutomaticSize.Y
 content.Parent = Main
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 8)
+listLayout.Parent = content
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 4)
+padding.PaddingBottom = UDim.new(0, 8)
+padding.Parent = content
 
 local currentTab = nil
 local tabButtons = {}
 
 local function clearContent()
 	for _, c in ipairs(content:GetChildren()) do
-		c:Destroy()
+		if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then
+			c:Destroy()
+		end
 	end
 end
 
@@ -503,10 +534,6 @@ local function switchTab(name)
 	end
 	clearContent()
 
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, 8)
-	layout.Parent = content
-
 	if name == "Entity" then
 		makeNote("Adding features soon\nWork in progress")
 
@@ -537,6 +564,18 @@ local function switchTab(name)
 		end)
 		makeToggle("Slateskin Potion ESP", slateskinESP, function(v)
 			slateskinESP = v
+			updateItemESP()
+		end)
+		makeToggle("Healing Potion ESP", healingPotionESP, function(v)
+			healingPotionESP = v
+			updateItemESP()
+		end)
+		makeToggle("Bloxy Cola ESP", bloxyColaESP, function(v)
+			bloxyColaESP = v
+			updateItemESP()
+		end)
+		makeToggle("Crate ESP", crateESP, function(v)
+			crateESP = v
 			updateItemESP()
 		end)
 
@@ -571,4 +610,4 @@ for i, name in ipairs(tabs) do
 end
 
 switchTab("Survivor")
-print("TIMELESS Hub loaded - individual item ESPs + Misc tab")
+print("TIMELESS Hub loaded - new item ESPs + auto remove")
