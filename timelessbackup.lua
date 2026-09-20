@@ -1,4 +1,4 @@
--- TIMELESS Script Hub (Lag Reduced)
+-- TIMELESS Script Hub
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -35,6 +35,7 @@ local crateESP = false
 local autoCarry = false
 local autoRevive = false
 local autoWirebox = false
+local autoHammer = false
 local fullbrightEnabled = false
 local noFogEnabled = false
 
@@ -42,80 +43,128 @@ local highlights = {}
 local billboards = {}
 local itemHighlights = {}
 local completedWireboxes = {}
+local wireboxCooldowns = {}
 
--- Save original lighting
-local oldAmbient = Lighting.Ambient
-local oldBrightness = Lighting.Brightness
-local oldClockTime = Lighting.ClockTime
-local oldFogEnd = Lighting.FogEnd
-local oldFogStart = Lighting.FogStart
-local oldGlobalShadows = Lighting.GlobalShadows
-local oldOutdoorAmbient = Lighting.OutdoorAmbient
+-- ===================== STARTUP NOTE =====================
+task.spawn(function()
+	local note = Instance.new("Frame")
+	note.Size = UDim2.new(0, 340, 0, 125)
+	note.Position = UDim2.new(0.5, -170, 0.15, 0)
+	note.BackgroundColor3 = Color3.fromRGB(22, 18, 32)
+	note.BorderSizePixel = 0
+	note.ZIndex = 50
+	note.Parent = UI
+	Instance.new("UICorner", note).CornerRadius = UDim.new(0, 12)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = ACCENT
+	stroke.Thickness = 1.5
+	stroke.Parent = note
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, -50, 0, 28)
+	title.Position = UDim2.new(0, 12, 0, 8)
+	title.BackgroundTransparency = 1
+	title.Text = "TIMELESS"
+	title.TextColor3 = ACCENT
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 18
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.ZIndex = 51
+	title.Parent = note
+
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Size = UDim2.new(0, 28, 0, 28)
+	closeBtn.Position = UDim2.new(1, -34, 0, 8)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(40, 30, 55)
+	closeBtn.Text = "X"
+	closeBtn.TextColor3 = TEXT
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.TextSize = 14
+	closeBtn.ZIndex = 52
+	closeBtn.Parent = note
+	Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+
+	closeBtn.MouseButton1Click:Connect(function()
+		note:Destroy()
+	end)
+
+	local msg = Instance.new("TextLabel")
+	msg.Size = UDim2.new(1, -24, 0, 75)
+	msg.Position = UDim2.new(0, 12, 0, 40)
+	msg.BackgroundTransparency = 1
+	msg.Text = "Found any bugs or have suggestions?\nLeave a comment on ScriptBlox.\nThinking about making a Discord — lmk"
+	msg.TextColor3 = TEXT
+	msg.Font = Enum.Font.Gotham
+	msg.TextSize = 14
+	msg.TextWrapped = true
+	msg.TextXAlignment = Enum.TextXAlignment.Left
+	msg.TextYAlignment = Enum.TextYAlignment.Top
+	msg.ZIndex = 51
+	msg.Parent = note
+end)
 
 -- ===================== FULLBRIGHT + NO FOG =====================
-local function applyFullbright(state)
-	if state then
-		Lighting.Brightness = 5
-		Lighting.ClockTime = 12
-		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-		Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-		Lighting.GlobalShadows = false
-		Lighting.FogEnd = 1000000
-		Lighting.FogStart = 0
-		Lighting.FogColor = Color3.fromRGB(255, 255, 255)
+local function applyFullbright()
+	Lighting.Brightness = 5
+	Lighting.ClockTime = 12
+	Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+	Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+	Lighting.GlobalShadows = false
+	Lighting.FogEnd = 1000000
+	Lighting.FogStart = 0
 
-		local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-		if atmosphere then
-			atmosphere.Density = 0
-			atmosphere.Haze = 0
-			atmosphere.Glare = 0
-		end
-	else
-		Lighting.Brightness = oldBrightness
-		Lighting.ClockTime = oldClockTime
-		Lighting.Ambient = oldAmbient
-		Lighting.OutdoorAmbient = oldOutdoorAmbient
-		Lighting.GlobalShadows = oldGlobalShadows
-		Lighting.FogEnd = oldFogEnd
-		Lighting.FogStart = oldFogStart
+	local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+	if atmosphere then
+		atmosphere.Density = 0
+		atmosphere.Haze = 0
+		atmosphere.Glare = 0
 	end
 end
 
-local function applyNoFog(state)
-	if state then
-		Lighting.FogEnd = 1000000
-		Lighting.FogStart = 0
-		Lighting.FogColor = Color3.fromRGB(255, 255, 255)
+local function applyNoFog()
+	Lighting.FogEnd = 1000000
+	Lighting.FogStart = 0
 
-		local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-		if atmosphere then
-			atmosphere.Density = 0
-			atmosphere.Offset = 0
-			atmosphere.Haze = 0
-			atmosphere.Glare = 0
-		end
-
-		for _, effect in ipairs(Lighting:GetChildren()) do
-			if effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("ColorCorrectionEffect") then
-				effect.Enabled = false
-			end
-		end
-	else
-		Lighting.FogEnd = oldFogEnd
-		Lighting.FogStart = oldFogStart
+	local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+	if atmosphere then
+		atmosphere.Density = 0
+		atmosphere.Haze = 0
+		atmosphere.Glare = 0
 	end
 end
 
--- ===================== AUTO WIREBOX =====================
-local function completeAllWireboxes()
+task.spawn(function()
+	while true do
+		task.wait(2)
+		if fullbrightEnabled then applyFullbright() end
+		if noFogEnabled then applyNoFog() end
+	end
+end)
+
+-- ===================== AUTO WIREBOX (7-12 sec) =====================
+local function completeWireboxesDelayed()
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if obj.Name == "CompleteObjective" and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
 			local parent = obj.Parent
 			if parent and parent.Name == "Wirebox" then
-				pcall(function()
-					obj:FireServer()
+				if completedWireboxes[parent] or wireboxCooldowns[parent] then
+					continue
+				end
+
+				wireboxCooldowns[parent] = true
+				local delayTime = math.random(7, 12)
+
+				task.spawn(function()
+					task.wait(delayTime)
+					if autoWirebox and parent and parent.Parent then
+						pcall(function()
+							obj:FireServer()
+						end)
+						completedWireboxes[parent] = true
+					end
+					wireboxCooldowns[parent] = nil
 				end)
-				completedWireboxes[parent] = true
 			end
 		end
 	end
@@ -123,21 +172,50 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(2) -- slower
+		task.wait(3)
 		if autoWirebox then
-			completeAllWireboxes()
+			completeWireboxesDelayed()
+		end
+	end
+end)
+
+-- ===================== AUTO PICKUP HAMMER =====================
+local function tryPickupHammer()
+	local myRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return end
+
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		local name = obj.Name:lower()
+		if name:find("doomhammer") or name == "hammer" then
+			local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+			if part then
+				local dist = (myRoot.Position - part.Position).Magnitude
+				if dist < 22 then
+					local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or part:FindFirstChildOfClass("ProximityPrompt")
+					if prompt then
+						pcall(function() fireproximityprompt(prompt) end)
+					end
+
+					local click = obj:FindFirstChildOfClass("ClickDetector") or part:FindFirstChildOfClass("ClickDetector")
+					if click then
+						pcall(function() fireclickdetector(click) end)
+					end
+				end
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(0.7)
+		if autoHammer then
+			tryPickupHammer()
 		end
 	end
 end)
 
 -- ===================== ITEM ESP =====================
-local function clearItemESP()
-	for obj, h in pairs(itemHighlights) do
-		pcall(function() h:Destroy() end)
-	end
-	table.clear(itemHighlights)
-end
-
 local function updateItemESP()
 	for obj, h in pairs(itemHighlights) do
 		if not obj or not obj.Parent then
@@ -152,11 +230,11 @@ local function updateItemESP()
 		if (obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart")) and not itemHighlights[obj] then
 			local color = nil
 
-			if gasESP and (name:find("gascanister") or name:find("gas canister") or name:find("gas_canister")) then
+			if gasESP and (name:find("gascanister") or name:find("gas canister")) then
 				color = Color3.fromRGB(255, 170, 0)
-			elseif medkitESP and (name:find("medkit") or name:find("med kit")) then
+			elseif medkitESP and name:find("medkit") then
 				color = Color3.fromRGB(0, 255, 100)
-			elseif slateskinESP and (name:find("slateskin") or name:find("slate skin") or name:find("slateskinpotion")) then
+			elseif slateskinESP and (name:find("slateskin") or name:find("slate skin")) then
 				color = Color3.fromRGB(180, 100, 255)
 			elseif wireboxESP and name == "wirebox" then
 				if completedWireboxes[obj] or not obj:FindFirstChild("CompleteObjective") then
@@ -164,9 +242,9 @@ local function updateItemESP()
 				else
 					color = Color3.fromRGB(0, 220, 255)
 				end
-			elseif healingPotionESP and (name:find("healingpotion") or name:find("healing potion")) then
+			elseif healingPotionESP and name:find("healingpotion") then
 				color = Color3.fromRGB(100, 255, 180)
-			elseif bloxyColaESP and (name:find("bloxycola") or name:find("bloxy cola")) then
+			elseif bloxyColaESP and name:find("bloxycola") then
 				color = Color3.fromRGB(255, 80, 80)
 			elseif crateESP and name == "crate" then
 				color = Color3.fromRGB(255, 200, 50)
@@ -183,19 +261,13 @@ local function updateItemESP()
 				highlight.Parent = obj
 				itemHighlights[obj] = highlight
 			end
-		elseif itemHighlights[obj] and name == "wirebox" then
-			local h = itemHighlights[obj]
-			if completedWireboxes[obj] or not obj:FindFirstChild("CompleteObjective") then
-				h.FillColor = Color3.fromRGB(0, 255, 80)
-				h.OutlineColor = Color3.fromRGB(0, 255, 80)
-			end
 		end
 	end
 end
 
 task.spawn(function()
 	while true do
-		task.wait(2.5) -- slower
+		task.wait(3.5)
 		updateItemESP()
 	end
 end)
@@ -296,11 +368,6 @@ local function updateESP()
 				local isEnt = isEntity(player)
 				if not highlights[player] or highlights[player].Adornee ~= player.Character then
 					createESP(player, isEnt)
-				else
-					local color = isEnt and Color3.fromRGB(255, 40, 40) or Color3.fromRGB(40, 140, 255)
-					if highlights[player].FillColor ~= color then
-						createESP(player, isEnt)
-					end
 				end
 			else
 				cleanup(player)
@@ -311,7 +378,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(1) -- slower
+		task.wait(1.5)
 		updateESP()
 	end
 end)
@@ -350,7 +417,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(0.8)
+		task.wait(1)
 		if autoCarry and RequestCarry then
 			local target = getClosestDowned()
 			if target then
@@ -362,7 +429,7 @@ end)
 
 task.spawn(function()
 	while true do
-		task.wait(0.8)
+		task.wait(1)
 		if autoRevive and RequestRevive then
 			local target = getClosestDowned()
 			if target then
@@ -374,8 +441,8 @@ end)
 
 -- ===================== UI =====================
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 400, 0, 380)
-Main.Position = UDim2.new(0.5, -200, 0.5, -190)
+Main.Size = UDim2.new(0, 400, 0, 400)
+Main.Position = UDim2.new(0.5, -200, 0.5, -200)
 Main.BackgroundColor3 = BG
 Main.BorderSizePixel = 0
 Main.Parent = UI
@@ -392,7 +459,6 @@ title.TextSize = 20
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = Main
 
--- Drag
 local dragging, dragStart, startPos
 Main.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -413,7 +479,6 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- UI Toggle
 local hideBtn = Instance.new("TextButton")
 hideBtn.Size = UDim2.new(0, 70, 0, 30)
 hideBtn.Position = UDim2.new(1, -85, 0, 70)
@@ -452,7 +517,6 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- Sidebar
 local sidebar = Instance.new("Frame")
 sidebar.Size = UDim2.new(0, 100, 1, -45)
 sidebar.Position = UDim2.new(0, 10, 0, 40)
@@ -540,7 +604,7 @@ end
 
 local function makeNote(text)
 	local note = Instance.new("Frame")
-	note.Size = UDim2.new(1, -10, 0, 60)
+	note.Size = UDim2.new(1, -10, 0, 50)
 	note.BackgroundColor3 = Color3.fromRGB(35, 25, 45)
 	note.BorderSizePixel = 0
 	note.Parent = content
@@ -576,53 +640,32 @@ local function switchTab(name)
 		makeToggle("Auto Carry", autoCarry, function(v) autoCarry = v end)
 		makeToggle("Auto Revive", autoRevive, function(v) autoRevive = v end)
 		makeToggle("Auto Wirebox", autoWirebox, function(v) autoWirebox = v end)
+		makeToggle("Auto Pickup Hammer", autoHammer, function(v) autoHammer = v end)
+		makeNote("Auto Wirebox waits\n7-12 seconds")
 
 	elseif name == "Visuals" then
 		makeToggle("Player ESP", espEnabled, function(v)
 			espEnabled = v
 			if not v then
-				for plr, _ in pairs(highlights) do
-					cleanup(plr)
-				end
+				for plr, _ in pairs(highlights) do cleanup(plr) end
 			end
 		end)
-		makeToggle("Gas Canister ESP", gasESP, function(v)
-			gasESP = v
-			updateItemESP()
-		end)
-		makeToggle("Medkit ESP", medkitESP, function(v)
-			medkitESP = v
-			updateItemESP()
-		end)
-		makeToggle("Wirebox ESP", wireboxESP, function(v)
-			wireboxESP = v
-			updateItemESP()
-		end)
-		makeToggle("Slateskin Potion ESP", slateskinESP, function(v)
-			slateskinESP = v
-			updateItemESP()
-		end)
-		makeToggle("Healing Potion ESP", healingPotionESP, function(v)
-			healingPotionESP = v
-			updateItemESP()
-		end)
-		makeToggle("Bloxy Cola ESP", bloxyColaESP, function(v)
-			bloxyColaESP = v
-			updateItemESP()
-		end)
-		makeToggle("Crate ESP", crateESP, function(v)
-			crateESP = v
-			updateItemESP()
-		end)
+		makeToggle("Gas Canister ESP", gasESP, function(v) gasESP = v updateItemESP() end)
+		makeToggle("Medkit ESP", medkitESP, function(v) medkitESP = v updateItemESP() end)
+		makeToggle("Wirebox ESP", wireboxESP, function(v) wireboxESP = v updateItemESP() end)
+		makeToggle("Slateskin Potion ESP", slateskinESP, function(v) slateskinESP = v updateItemESP() end)
+		makeToggle("Healing Potion ESP", healingPotionESP, function(v) healingPotionESP = v updateItemESP() end)
+		makeToggle("Bloxy Cola ESP", bloxyColaESP, function(v) bloxyColaESP = v updateItemESP() end)
+		makeToggle("Crate ESP", crateESP, function(v) crateESP = v updateItemESP() end)
 
 	elseif name == "Misc" then
 		makeToggle("Fullbright", fullbrightEnabled, function(v)
 			fullbrightEnabled = v
-			applyFullbright(v)
+			if v then applyFullbright() end
 		end)
 		makeToggle("No Fog", noFogEnabled, function(v)
 			noFogEnabled = v
-			applyNoFog(v)
+			if v then applyNoFog() end
 		end)
 	end
 end
@@ -646,4 +689,4 @@ for i, name in ipairs(tabs) do
 end
 
 switchTab("Survivor")
-print("TIMELESS Hub loaded - Reduced lag version")
+print("TIMELESS Hub loaded")
