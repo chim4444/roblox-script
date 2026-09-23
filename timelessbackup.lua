@@ -1,29 +1,16 @@
--- TIMELESS Script Hub
+-- TIMELESS Script Hub (WindUI)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
+local Teams = game:GetService("Teams")
 local LP = Players.LocalPlayer
 
-local PG = LP:WaitForChild("PlayerGui")
-if PG:FindFirstChild("TimelessHub") then PG.TimelessHub:Destroy() end
+-- Load WindUI
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
-local UI = Instance.new("ScreenGui")
-UI.Name = "TimelessHub"
-UI.ResetOnSpawn = false
-UI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-UI.Parent = PG
-
--- Colors
-local ACCENT = Color3.fromRGB(180, 50, 255)
-local BG = Color3.fromRGB(18, 18, 24)
-local CARD = Color3.fromRGB(28, 28, 36)
-local TEXT = Color3.fromRGB(240, 240, 245)
-local DIM = Color3.fromRGB(140, 140, 155)
-
--- States
+-- ===================== STATES =====================
 local espEnabled = true
 local gasESP = false
 local medkitESP = false
@@ -42,67 +29,11 @@ local noFogEnabled = false
 local highlights = {}
 local billboards = {}
 local itemHighlights = {}
+local itemLabels = {}
+local trapHighlights = {}
+local rebelHighlights = {}
 local completedWireboxes = {}
 local wireboxCooldowns = {}
-
--- ===================== STARTUP NOTE =====================
-task.spawn(function()
-	local note = Instance.new("Frame")
-	note.Size = UDim2.new(0, 340, 0, 125)
-	note.Position = UDim2.new(0.5, -170, 0.15, 0)
-	note.BackgroundColor3 = Color3.fromRGB(22, 18, 32)
-	note.BorderSizePixel = 0
-	note.ZIndex = 50
-	note.Parent = UI
-	Instance.new("UICorner", note).CornerRadius = UDim.new(0, 12)
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = ACCENT
-	stroke.Thickness = 1.5
-	stroke.Parent = note
-
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -50, 0, 28)
-	title.Position = UDim2.new(0, 12, 0, 8)
-	title.BackgroundTransparency = 1
-	title.Text = "TIMELESS"
-	title.TextColor3 = ACCENT
-	title.Font = Enum.Font.GothamBold
-	title.TextSize = 18
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.ZIndex = 51
-	title.Parent = note
-
-	local closeBtn = Instance.new("TextButton")
-	closeBtn.Size = UDim2.new(0, 28, 0, 28)
-	closeBtn.Position = UDim2.new(1, -34, 0, 8)
-	closeBtn.BackgroundColor3 = Color3.fromRGB(40, 30, 55)
-	closeBtn.Text = "X"
-	closeBtn.TextColor3 = TEXT
-	closeBtn.Font = Enum.Font.GothamBold
-	closeBtn.TextSize = 14
-	closeBtn.ZIndex = 52
-	closeBtn.Parent = note
-	Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
-
-	closeBtn.MouseButton1Click:Connect(function()
-		note:Destroy()
-	end)
-
-	local msg = Instance.new("TextLabel")
-	msg.Size = UDim2.new(1, -24, 0, 75)
-	msg.Position = UDim2.new(0, 12, 0, 40)
-	msg.BackgroundTransparency = 1
-	msg.Text = "Found any bugs or have suggestions?\nLeave a comment on ScriptBlox.\nThinking about making a Discord — lmk"
-	msg.TextColor3 = TEXT
-	msg.Font = Enum.Font.Gotham
-	msg.TextSize = 14
-	msg.TextWrapped = true
-	msg.TextXAlignment = Enum.TextXAlignment.Left
-	msg.TextYAlignment = Enum.TextYAlignment.Top
-	msg.ZIndex = 51
-	msg.Parent = note
-end)
 
 -- ===================== FULLBRIGHT + NO FOG =====================
 local function applyFullbright()
@@ -142,12 +73,12 @@ task.spawn(function()
 	end
 end)
 
--- ===================== AUTO WIREBOX (7-12 sec) =====================
+-- ===================== AUTO WIREBOX =====================
 local function completeWireboxesDelayed()
 	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj.Name == "CompleteObjective" and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
+		if (obj.Name == "CompleteObjective" or obj.Name == "Complete") and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
 			local parent = obj.Parent
-			if parent and parent.Name == "Wirebox" then
+			if parent and (parent.Name == "Wirebox" or string.lower(parent.Name):find("wire")) then
 				if completedWireboxes[parent] or wireboxCooldowns[parent] then
 					continue
 				end
@@ -159,7 +90,11 @@ local function completeWireboxesDelayed()
 					task.wait(delayTime)
 					if autoWirebox and parent and parent.Parent then
 						pcall(function()
-							obj:FireServer()
+							if obj:IsA("RemoteEvent") then
+								obj:FireServer()
+							else
+								obj:InvokeServer()
+							end
 						end)
 						completedWireboxes[parent] = true
 					end
@@ -172,7 +107,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(3)
+		task.wait(2.5)
 		if autoWirebox then
 			completeWireboxesDelayed()
 		end
@@ -195,7 +130,6 @@ local function tryPickupHammer()
 					if prompt then
 						pcall(function() fireproximityprompt(prompt) end)
 					end
-
 					local click = obj:FindFirstChildOfClass("ClickDetector") or part:FindFirstChildOfClass("ClickDetector")
 					if click then
 						pcall(function() fireclickdetector(click) end)
@@ -216,38 +150,53 @@ task.spawn(function()
 end)
 
 -- ===================== ITEM ESP =====================
-local function updateItemESP()
+local function clearItemESP()
 	for obj, h in pairs(itemHighlights) do
-		if not obj or not obj.Parent then
-			pcall(function() h:Destroy() end)
-			itemHighlights[obj] = nil
-		end
+		pcall(function() h:Destroy() end)
 	end
+	for obj, b in pairs(itemLabels) do
+		pcall(function() b:Destroy() end)
+	end
+	itemHighlights = {}
+	itemLabels = {}
+end
+
+local function updateItemESP()
+	clearItemESP()
 
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		local name = string.lower(obj.Name)
+		local color, labelText = nil, nil
 
-		if (obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart")) and not itemHighlights[obj] then
-			local color = nil
+		if (obj:IsA("Model") or obj:IsA("BasePart") or obj:IsA("Folder")) then
+			local parentName = obj.Parent and string.lower(obj.Parent.Name) or ""
 
-			if gasESP and (name:find("gascanister") or name:find("gas canister")) then
+			if gasESP and (name:find("gascanister") or name:find("gas canister") or name:find("gas_canister")) then
 				color = Color3.fromRGB(255, 170, 0)
-			elseif medkitESP and name:find("medkit") then
+				labelText = "Gas"
+			elseif medkitESP and (name:find("medkit") or name:find("med kit")) then
 				color = Color3.fromRGB(0, 255, 100)
-			elseif slateskinESP and (name:find("slateskin") or name:find("slate skin")) then
+				labelText = "Medkit"
+			elseif slateskinESP and (name:find("slateskin") or name:find("slate skin") or name:find("slateskinpotion")) then
 				color = Color3.fromRGB(180, 100, 255)
+				labelText = "Slateskin"
 			elseif wireboxESP and name == "wirebox" then
 				if completedWireboxes[obj] or not obj:FindFirstChild("CompleteObjective") then
 					color = Color3.fromRGB(0, 255, 80)
+					labelText = "Wirebox ✓"
 				else
 					color = Color3.fromRGB(0, 220, 255)
+					labelText = "Wirebox"
 				end
-			elseif healingPotionESP and name:find("healingpotion") then
+			elseif healingPotionESP and (name:find("healingpotion") or name == "healing potion" or name == "heal potion") and not parentName:find("station") and not name:find("station") then
 				color = Color3.fromRGB(100, 255, 180)
-			elseif bloxyColaESP and name:find("bloxycola") then
+				labelText = "Heal"
+			elseif bloxyColaESP and (name:find("bloxycola") or name:find("bloxy cola") or name:find("cola")) then
 				color = Color3.fromRGB(255, 80, 80)
+				labelText = "Cola"
 			elseif crateESP and name == "crate" then
 				color = Color3.fromRGB(255, 200, 50)
+				labelText = "Crate"
 			end
 
 			if color then
@@ -260,6 +209,29 @@ local function updateItemESP()
 				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 				highlight.Parent = obj
 				itemHighlights[obj] = highlight
+
+				local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+				if part and labelText then
+					local billboard = Instance.new("BillboardGui")
+					billboard.Adornee = part
+					billboard.Size = UDim2.new(0, 60, 0, 16)
+					billboard.StudsOffset = Vector3.new(0, 2.2, 0)
+					billboard.AlwaysOnTop = true
+					billboard.MaxDistance = 120
+					billboard.Parent = obj
+
+					local label = Instance.new("TextLabel")
+					label.Size = UDim2.new(1, 0, 1, 0)
+					label.BackgroundTransparency = 1
+					label.Text = labelText
+					label.TextColor3 = color
+					label.TextStrokeTransparency = 0.3
+					label.Font = Enum.Font.GothamBold
+					label.TextSize = 11
+					label.Parent = billboard
+
+					itemLabels[obj] = billboard
+				end
 			end
 		end
 	end
@@ -267,8 +239,82 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(3.5)
+		task.wait(3)
 		updateItemESP()
+	end
+end)
+
+-- ===================== TRAP + REBEL ESP =====================
+local function clearTrapRebel()
+	for obj, h in pairs(trapHighlights) do
+		pcall(function() h:Destroy() end)
+	end
+	for obj, h in pairs(rebelHighlights) do
+		pcall(function() h:Destroy() end)
+	end
+	trapHighlights = {}
+	rebelHighlights = {}
+end
+
+local function updateTrapRebelESP()
+	clearTrapRebel()
+	if not espEnabled then return end
+
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		local name = string.lower(obj.Name)
+
+		if obj:IsA("Model") or obj:IsA("BasePart") then
+			if name == "trapmodel" or name:find("trap") then
+				local highlight = Instance.new("Highlight")
+				highlight.Adornee = obj
+				highlight.FillColor = Color3.fromRGB(255, 60, 60)
+				highlight.OutlineColor = Color3.fromRGB(255, 60, 60)
+				highlight.FillTransparency = 0.5
+				highlight.OutlineTransparency = 0
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.Parent = obj
+				trapHighlights[obj] = highlight
+
+			elseif name:find("rebel") then
+				local highlight = Instance.new("Highlight")
+				highlight.Adornee = obj
+				highlight.FillColor = Color3.fromRGB(255, 40, 40)
+				highlight.OutlineColor = Color3.fromRGB(255, 40, 40)
+				highlight.FillTransparency = 0.5
+				highlight.OutlineTransparency = 0
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.Parent = obj
+				rebelHighlights[obj] = highlight
+
+				local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+				if part then
+					local billboard = Instance.new("BillboardGui")
+					billboard.Adornee = part
+					billboard.Size = UDim2.new(0, 50, 0, 16)
+					billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+					billboard.AlwaysOnTop = true
+					billboard.MaxDistance = 200
+					billboard.Parent = obj
+
+					local label = Instance.new("TextLabel")
+					label.Size = UDim2.new(1, 0, 1, 0)
+					label.BackgroundTransparency = 1
+					label.Text = "Bot"
+					label.TextColor3 = Color3.fromRGB(255, 40, 40)
+					label.TextStrokeTransparency = 0.3
+					label.Font = Enum.Font.GothamBold
+					label.TextSize = 12
+					label.Parent = billboard
+				end
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(2)
+		updateTrapRebelESP()
 	end
 end)
 
@@ -285,10 +331,13 @@ local function cleanup(player)
 end
 
 local function isEntity(player)
-	if not player.Character then return false end
-	local hum = player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum then return false end
-	return hum.MaxHealth > 500
+	if not player.Team then return false end
+	return player.Team.Name == "Entities"
+end
+
+local function isSurvivor(player)
+	if not player.Team then return false end
+	return player.Team.Name == "Survivors"
 end
 
 local function createESP(player, isEnt)
@@ -359,15 +408,20 @@ local function updateESP()
 		for plr, _ in pairs(highlights) do
 			cleanup(plr)
 		end
+		clearTrapRebel()
 		return
 	end
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LP then
 			if player.Character and player.Character:FindFirstChild("Humanoid") and player.Character:FindFirstChild("HumanoidRootPart") then
-				local isEnt = isEntity(player)
-				if not highlights[player] or highlights[player].Adornee ~= player.Character then
-					createESP(player, isEnt)
+				if isEntity(player) or isSurvivor(player) then
+					local isEnt = isEntity(player)
+					if not highlights[player] or highlights[player].Adornee ~= player.Character then
+						createESP(player, isEnt)
+					end
+				else
+					cleanup(player)
 				end
 			else
 				cleanup(player)
@@ -378,7 +432,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(1.5)
+		task.wait(1.2)
 		updateESP()
 	end
 end)
@@ -400,7 +454,7 @@ local function getClosestDowned()
 	if not myRoot then return end
 
 	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LP and plr.Character then
+		if plr ~= LP and plr.Character and isSurvivor(plr) then
 			local hum = plr.Character:FindFirstChildOfClass("Humanoid")
 			local root = plr.Character:FindFirstChild("HumanoidRootPart")
 			if hum and root and hum.Health > 0 and hum.Health < hum.MaxHealth * 0.4 then
@@ -439,254 +493,178 @@ task.spawn(function()
 	end
 end)
 
--- ===================== UI =====================
-local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 400, 0, 400)
-Main.Position = UDim2.new(0.5, -200, 0.5, -200)
-Main.BackgroundColor3 = BG
-Main.BorderSizePixel = 0
-Main.Parent = UI
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
+-- ===================== WINDUI =====================
+local Window = WindUI:CreateWindow({
+	Title = "TIMELESS",
+	Icon = "star",
+	Theme = "Dark",
+	Folder = "TimelessHub"
+})
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -20, 0, 28)
-title.Position = UDim2.new(0, 12, 0, 8)
-title.BackgroundTransparency = 1
-title.Text = "TIMELESS"
-title.TextColor3 = ACCENT
-title.Font = Enum.Font.GothamBold
-title.TextSize = 20
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = Main
+-- Entity Tab
+local EntityTab = Window:Tab({
+	Title = "Entity",
+	Icon = "skull"
+})
 
-local dragging, dragStart, startPos
-Main.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
-		dragStart = input.Position
-		startPos = Main.Position
+EntityTab:Paragraph({
+	Title = "Note",
+	Desc = "Adding features soon\nWork in progress"
+})
+
+-- Survivor Tab
+local SurvivorTab = Window:Tab({
+	Title = "Survivor",
+	Icon = "user"
+})
+
+SurvivorTab:Toggle({
+	Title = "Auto Carry",
+	Value = false,
+	Callback = function(v)
+		autoCarry = v
 	end
-end)
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local delta = input.Position - dragStart
-		Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+})
+
+SurvivorTab:Toggle({
+	Title = "Auto Revive",
+	Value = false,
+	Callback = function(v)
+		autoRevive = v
 	end
-end)
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = false
+})
+
+SurvivorTab:Toggle({
+	Title = "Auto Wirebox",
+	Value = false,
+	Callback = function(v)
+		autoWirebox = v
 	end
-end)
+})
 
-local hideBtn = Instance.new("TextButton")
-hideBtn.Size = UDim2.new(0, 70, 0, 30)
-hideBtn.Position = UDim2.new(1, -85, 0, 70)
-hideBtn.BackgroundColor3 = ACCENT
-hideBtn.Text = "HIDE"
-hideBtn.TextColor3 = TEXT
-hideBtn.Font = Enum.Font.GothamBold
-hideBtn.TextSize = 13
-hideBtn.Parent = UI
-Instance.new("UICorner", hideBtn).CornerRadius = UDim.new(0, 8)
-
-local uiVisible = true
-hideBtn.MouseButton1Click:Connect(function()
-	uiVisible = not uiVisible
-	Main.Visible = uiVisible
-	hideBtn.Text = uiVisible and "HIDE" or "SHOW"
-end)
-
-local hDragging, hDragStart, hStartPos
-hideBtn.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		hDragging = true
-		hDragStart = input.Position
-		hStartPos = hideBtn.Position
+SurvivorTab:Toggle({
+	Title = "Auto Pickup Hammer",
+	Value = false,
+	Callback = function(v)
+		autoHammer = v
 	end
-end)
-UserInputService.InputChanged:Connect(function(input)
-	if hDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local delta = input.Position - hDragStart
-		hideBtn.Position = UDim2.new(hStartPos.X.Scale, hStartPos.X.Offset + delta.X, hStartPos.Y.Scale, hStartPos.Y.Offset + delta.Y)
-	end
-end)
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		hDragging = false
-	end
-end)
+})
 
-local sidebar = Instance.new("Frame")
-sidebar.Size = UDim2.new(0, 100, 1, -45)
-sidebar.Position = UDim2.new(0, 10, 0, 40)
-sidebar.BackgroundColor3 = Color3.fromRGB(24, 24, 32)
-sidebar.BorderSizePixel = 0
-sidebar.Parent = Main
-Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0, 8)
+SurvivorTab:Paragraph({
+	Title = "Info",
+	Desc = "Auto Wirebox waits 7-12 seconds before completing"
+})
 
-local content = Instance.new("ScrollingFrame")
-content.Size = UDim2.new(1, -125, 1, -50)
-content.Position = UDim2.new(0, 115, 0, 42)
-content.BackgroundTransparency = 1
-content.BorderSizePixel = 0
-content.ScrollBarThickness = 3
-content.ScrollBarImageColor3 = ACCENT
-content.CanvasSize = UDim2.new(0, 0, 0, 0)
-content.AutomaticCanvasSize = Enum.AutomaticSize.Y
-content.Parent = Main
+-- Visuals Tab
+local VisualsTab = Window:Tab({
+	Title = "Visuals",
+	Icon = "eye"
+})
 
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 8)
-listLayout.Parent = content
-
-local padding = Instance.new("UIPadding")
-padding.PaddingTop = UDim.new(0, 4)
-padding.PaddingBottom = UDim.new(0, 8)
-padding.Parent = content
-
-local currentTab = nil
-local tabButtons = {}
-
-local function clearContent()
-	for _, c in ipairs(content:GetChildren()) do
-		if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then
-			c:Destroy()
+VisualsTab:Toggle({
+	Title = "Player ESP",
+	Value = true,
+	Callback = function(v)
+		espEnabled = v
+		if not v then
+			for plr, _ in pairs(highlights) do
+				cleanup(plr)
+			end
+			clearTrapRebel()
 		end
 	end
-end
+})
 
-local function makeToggle(text, default, callback)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, -10, 0, 36)
-	row.BackgroundColor3 = CARD
-	row.BorderSizePixel = 0
-	row.Parent = content
-	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+VisualsTab:Paragraph({
+	Title = "Note",
+	Desc = "Trap + Rebel ESP included with Player ESP"
+})
 
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -70, 1, 0)
-	lbl.Position = UDim2.new(0, 10, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = DIM
-	lbl.Font = Enum.Font.GothamMedium
-	lbl.TextSize = 13
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = row
-
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0, 50, 0, 24)
-	btn.Position = UDim2.new(1, -58, 0.5, -12)
-	btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-	btn.Text = "OFF"
-	btn.TextColor3 = DIM
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 11
-	btn.Parent = row
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-
-	local on = default
-	local function refresh()
-		btn.Text = on and "ON" or "OFF"
-		btn.BackgroundColor3 = on and ACCENT or Color3.fromRGB(45, 45, 55)
-		btn.TextColor3 = on and TEXT or DIM
-		lbl.TextColor3 = on and TEXT or DIM
+VisualsTab:Toggle({
+	Title = "Gas Canister ESP",
+	Value = false,
+	Callback = function(v)
+		gasESP = v
+		updateItemESP()
 	end
-	refresh()
+})
 
-	btn.MouseButton1Click:Connect(function()
-		on = not on
-		refresh()
-		callback(on)
-	end)
-end
-
-local function makeNote(text)
-	local note = Instance.new("Frame")
-	note.Size = UDim2.new(1, -10, 0, 50)
-	note.BackgroundColor3 = Color3.fromRGB(35, 25, 45)
-	note.BorderSizePixel = 0
-	note.Parent = content
-	Instance.new("UICorner", note).CornerRadius = UDim.new(0, 8)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -16, 1, 0)
-	lbl.Position = UDim2.new(0, 8, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = Color3.fromRGB(200, 160, 255)
-	lbl.Font = Enum.Font.GothamMedium
-	lbl.TextSize = 13
-	lbl.TextWrapped = true
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.TextYAlignment = Enum.TextYAlignment.Center
-	lbl.Parent = note
-end
-
-local function switchTab(name)
-	if currentTab == name then return end
-	currentTab = name
-	for id, btn in pairs(tabButtons) do
-		btn.BackgroundColor3 = (id == name) and ACCENT or Color3.fromRGB(40, 40, 50)
-		btn.TextColor3 = (id == name) and TEXT or DIM
+VisualsTab:Toggle({
+	Title = "Medkit ESP",
+	Value = false,
+	Callback = function(v)
+		medkitESP = v
+		updateItemESP()
 	end
-	clearContent()
+})
 
-	if name == "Entity" then
-		makeNote("Adding features soon\nWork in progress")
-
-	elseif name == "Survivor" then
-		makeToggle("Auto Carry", autoCarry, function(v) autoCarry = v end)
-		makeToggle("Auto Revive", autoRevive, function(v) autoRevive = v end)
-		makeToggle("Auto Wirebox", autoWirebox, function(v) autoWirebox = v end)
-		makeToggle("Auto Pickup Hammer", autoHammer, function(v) autoHammer = v end)
-		makeNote("Auto Wirebox waits\n7-12 seconds")
-
-	elseif name == "Visuals" then
-		makeToggle("Player ESP", espEnabled, function(v)
-			espEnabled = v
-			if not v then
-				for plr, _ in pairs(highlights) do cleanup(plr) end
-			end
-		end)
-		makeToggle("Gas Canister ESP", gasESP, function(v) gasESP = v updateItemESP() end)
-		makeToggle("Medkit ESP", medkitESP, function(v) medkitESP = v updateItemESP() end)
-		makeToggle("Wirebox ESP", wireboxESP, function(v) wireboxESP = v updateItemESP() end)
-		makeToggle("Slateskin Potion ESP", slateskinESP, function(v) slateskinESP = v updateItemESP() end)
-		makeToggle("Healing Potion ESP", healingPotionESP, function(v) healingPotionESP = v updateItemESP() end)
-		makeToggle("Bloxy Cola ESP", bloxyColaESP, function(v) bloxyColaESP = v updateItemESP() end)
-		makeToggle("Crate ESP", crateESP, function(v) crateESP = v updateItemESP() end)
-
-	elseif name == "Misc" then
-		makeToggle("Fullbright", fullbrightEnabled, function(v)
-			fullbrightEnabled = v
-			if v then applyFullbright() end
-		end)
-		makeToggle("No Fog", noFogEnabled, function(v)
-			noFogEnabled = v
-			if v then applyNoFog() end
-		end)
+VisualsTab:Toggle({
+	Title = "Wirebox ESP",
+	Value = false,
+	Callback = function(v)
+		wireboxESP = v
+		updateItemESP()
 	end
-end
+})
 
-local tabs = {"Entity", "Survivor", "Visuals", "Misc"}
-for i, name in ipairs(tabs) do
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -12, 0, 34)
-	btn.Position = UDim2.new(0, 6, 0, 8 + (i-1)*42)
-	btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-	btn.Text = name
-	btn.TextColor3 = DIM
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 13
-	btn.Parent = sidebar
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-	tabButtons[name] = btn
-	btn.MouseButton1Click:Connect(function()
-		switchTab(name)
-	end)
-end
+VisualsTab:Toggle({
+	Title = "Slateskin Potion ESP",
+	Value = false,
+	Callback = function(v)
+		slateskinESP = v
+		updateItemESP()
+	end
+})
 
-switchTab("Survivor")
-print("TIMELESS Hub loaded")
+VisualsTab:Toggle({
+	Title = "Healing Potion ESP",
+	Value = false,
+	Callback = function(v)
+		healingPotionESP = v
+		updateItemESP()
+	end
+})
+
+VisualsTab:Toggle({
+	Title = "Bloxy Cola ESP",
+	Value = false,
+	Callback = function(v)
+		bloxyColaESP = v
+		updateItemESP()
+	end
+})
+
+VisualsTab:Toggle({
+	Title = "Crate ESP",
+	Value = false,
+	Callback = function(v)
+		crateESP = v
+		updateItemESP()
+	end
+})
+
+-- Misc Tab
+local MiscTab = Window:Tab({
+	Title = "Misc",
+	Icon = "settings"
+})
+
+MiscTab:Toggle({
+	Title = "Fullbright",
+	Value = false,
+	Callback = function(v)
+		fullbrightEnabled = v
+		if v then applyFullbright() end
+	end
+})
+
+MiscTab:Toggle({
+	Title = "No Fog",
+	Value = false,
+	Callback = function(v)
+		noFogEnabled = v
+		if v then applyNoFog() end
+	end
+})
+
+print("TIMELESS Hub (WindUI) loaded")
