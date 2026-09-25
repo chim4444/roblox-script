@@ -1,4 +1,4 @@
--- TIMELESS Script Hub (WindUI) - Server Users Only
+-- TIMELESS Script Hub (WindUI) - Fixed Crate ESP (no decorative crates)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,6 +22,7 @@ local autoCarry = false
 local autoRevive = false
 local autoWirebox = false
 local autoHammer = false
+local autoEscape = false
 local fullbrightEnabled = false
 local noFogEnabled = false
 local showUsers = true
@@ -32,14 +33,15 @@ local itemHighlights = {}
 local itemLabels = {}
 local trapHighlights = {}
 local rebelHighlights = {}
-local completedWireboxes = {}
-local wireboxCooldowns = {}
+local zombieHighlights = {}
 local knownUsers = {}
+
+local wireboxBusy = false
+local lastWireboxTime = 0
 
 -- ===================== CUSTOM NOTIFICATION =====================
 local function Notify(title, content, duration)
 	duration = duration or 5
-
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "TimelessNotify"
 	gui.ResetOnSpawn = false
@@ -100,27 +102,44 @@ end
 -- ===================== MARK USER =====================
 local function markAsUser()
 	pcall(function()
-		if not LP:FindFirstChild("TIMELESS_USER") then
-			local marker = Instance.new("BoolValue")
-			marker.Name = "TIMELESS_USER"
-			marker.Value = true
-			marker.Parent = LP
+		local char = LP.Character
+		if char and not char:FindFirstChild("TIMELESS_TAG") then
+			local tag = Instance.new("BoolValue")
+			tag.Name = "TIMELESS_TAG"
+			tag.Value = true
+			tag.Parent = char
+		end
+		local markerName = "TIMELESS_" .. LP.UserId
+		if not Workspace:FindFirstChild(markerName) then
+			local marker = Instance.new("Folder")
+			marker.Name = markerName
+			marker.Parent = Workspace
 		end
 	end)
 end
 
 markAsUser()
 LP.CharacterAdded:Connect(function()
-	task.wait(1)
+	task.wait(0.8)
 	markAsUser()
 end)
 
--- ===================== SERVER USERS =====================
+task.spawn(function()
+	while true do
+		task.wait(5)
+		markAsUser()
+	end
+end)
+
+-- ===================== DETECT OTHER USERS =====================
 local function getOtherUsers()
 	local users = {}
 	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LP and plr:FindFirstChild("TIMELESS_USER") then
-			table.insert(users, plr.Name)
+		if plr ~= LP then
+			local found = false
+			if plr.Character and plr.Character:FindFirstChild("TIMELESS_TAG") then found = true end
+			if Workspace:FindFirstChild("TIMELESS_" .. plr.UserId) then found = true end
+			if found then table.insert(users, plr.Name) end
 		end
 	end
 	return users
@@ -129,18 +148,15 @@ end
 local function notifyUsers()
 	local users = getOtherUsers()
 	local serverCount = #users + 1
-
 	local content
 	if #users > 0 then
 		content = "Server: " .. serverCount .. " user(s)\nOthers: " .. table.concat(users, ", ")
 	else
 		content = "Server: 1 user (only you)\nNo other TIMELESS users found"
 	end
-
 	Notify("TIMELESS Users", content, 6)
 end
 
--- Detect new users joining
 task.spawn(function()
 	while true do
 		task.wait(6)
@@ -157,9 +173,7 @@ task.spawn(function()
 				for _, u in ipairs(users) do
 					if u == name then stillHere = true break end
 				end
-				if not stillHere then
-					knownUsers[name] = nil
-				end
+				if not stillHere then knownUsers[name] = nil end
 			end
 		end
 	end
@@ -169,7 +183,6 @@ end)
 task.spawn(function()
 	task.wait(1.5)
 	Notify("TIMELESS Loaded", "Found any bugs or suggestions?\nLeave a comment on ScriptBlox.", 6)
-
 	task.wait(1.5)
 	notifyUsers()
 end)
@@ -200,34 +213,50 @@ task.spawn(function()
 	end
 end)
 
--- ===================== AUTO WIREBOX =====================
-local function completeWireboxesDelayed()
+-- ===================== AUTO WIREBOX (BALANCED) =====================
+local function findWireboxRemotes()
+	local list = {}
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if (obj.Name == "CompleteObjective" or obj.Name == "Complete") and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
 			local parent = obj.Parent
 			if parent and (parent.Name == "Wirebox" or string.lower(parent.Name):find("wire")) then
-				if completedWireboxes[parent] or wireboxCooldowns[parent] then continue end
-				wireboxCooldowns[parent] = true
-				local delayTime = math.random(7, 12)
-				task.spawn(function()
-					task.wait(delayTime)
-					if autoWirebox and parent and parent.Parent then
-						pcall(function()
-							if obj:IsA("RemoteEvent") then obj:FireServer() else obj:InvokeServer() end
-						end)
-						completedWireboxes[parent] = true
-					end
-					wireboxCooldowns[parent] = nil
-				end)
+				table.insert(list, obj)
 			end
 		end
 	end
+	return list
 end
 
 task.spawn(function()
 	while true do
-		task.wait(2.5)
-		if autoWirebox then completeWireboxesDelayed() end
+		task.wait(3)
+		if not autoWirebox then continue end
+		if wireboxBusy then continue end
+
+		local now = tick()
+		if now - lastWireboxTime < 10 then continue end
+
+		local remotes = findWireboxRemotes()
+		if #remotes == 0 then continue end
+
+		local remote = remotes[math.random(1, #remotes)]
+		wireboxBusy = true
+
+		local delayTime = math.random(8, 12)
+		task.spawn(function()
+			task.wait(delayTime)
+			if autoWirebox and remote and remote.Parent then
+				pcall(function()
+					if remote:IsA("RemoteEvent") then
+						remote:FireServer()
+					else
+						remote:InvokeServer()
+					end
+				end)
+				lastWireboxTime = tick()
+			end
+			wireboxBusy = false
+		end)
 	end
 end)
 
@@ -256,7 +285,36 @@ task.spawn(function()
 	end
 end)
 
--- ===================== ITEM ESP =====================
+-- ===================== AUTO ESCAPE =====================
+local function tryAutoEscape()
+	local myRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return end
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		local name = string.lower(obj.Name)
+		if name == "escapemodel" or name:find("escape") then
+			local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+			if part and (myRoot.Position - part.Position).Magnitude < 40 then
+				for _, desc in ipairs(obj:GetDescendants()) do
+					if desc:IsA("ProximityPrompt") then
+						pcall(function() fireproximityprompt(desc) end)
+					end
+					if desc:IsA("ClickDetector") then
+						pcall(function() fireclickdetector(desc) end)
+					end
+				end
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(0.8)
+		if autoEscape then tryAutoEscape() end
+	end
+end)
+
+-- ===================== ITEM ESP (FIXED CRATE) =====================
 local function clearItemESP()
 	for obj, h in pairs(itemHighlights) do pcall(function() h:Destroy() end) end
 	for obj, b in pairs(itemLabels) do pcall(function() b:Destroy() end) end
@@ -264,32 +322,56 @@ local function clearItemESP()
 	itemLabels = {}
 end
 
+local function isInteractiveCrate(obj)
+	-- Skip decorative Area 51 crates
+	local fullPath = string.lower(obj:GetFullName())
+	if fullPath:find("area 51") or fullPath:find("area51") then
+		return false
+	end
+
+	-- Only highlight crates that can actually be interacted with
+	if obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildOfClass("ClickDetector") then
+		return true
+	end
+	if obj:FindFirstChildWhichIsA("ProximityPrompt", true) or obj:FindFirstChildWhichIsA("ClickDetector", true) then
+		return true
+	end
+
+	return false
+end
+
 local function updateItemESP()
 	clearItemESP()
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		local name = string.lower(obj.Name)
 		local color, labelText = nil, nil
-		if obj:IsA("Model") or obj:IsA("BasePart") or obj:IsA("Folder") then
+		if obj:IsA("Model") or obj:IsA("BasePart") or obj:IsA("Folder") or obj:IsA("Tool") then
 			local parentName = obj.Parent and string.lower(obj.Parent.Name) or ""
-			if gasESP and (name:find("gascanister") or name:find("gas canister")) then
+			local fullPath = string.lower(obj:GetFullName())
+
+			if gasESP and (name:find("gascanister") or name:find("gas canister") or name:find("gas_canister")) then
 				color = Color3.fromRGB(255, 170, 0)
 				labelText = "Gas"
-			elseif medkitESP and name:find("medkit") then
+			elseif medkitESP and (name:find("medkit") or name:find("med kit")) then
 				color = Color3.fromRGB(0, 255, 100)
 				labelText = "Medkit"
-			elseif slateskinESP and (name:find("slateskin") or name:find("slate skin")) then
+			elseif slateskinESP and (name:find("slateskin") or name:find("slate skin") or name:find("slateskinpotion")) then
 				color = Color3.fromRGB(180, 100, 255)
 				labelText = "Slateskin"
 			elseif wireboxESP and name == "wirebox" then
-				color = (completedWireboxes[obj] or not obj:FindFirstChild("CompleteObjective")) and Color3.fromRGB(0, 255, 80) or Color3.fromRGB(0, 220, 255)
-				labelText = completedWireboxes[obj] and "Wirebox ✓" or "Wirebox"
-			elseif healingPotionESP and (name:find("healingpotion") or name:find("heal potion")) and not parentName:find("station") then
+				color = Color3.fromRGB(0, 220, 255)
+				labelText = "Wirebox"
+			elseif healingPotionESP and (
+				name:find("healingpotion") or name:find("heal potion") or name:find("healing potion") or
+				name:find("healthpotion") or name:find("health potion") or name:find("healpotion") or
+				(name:find("potion") and name:find("heal"))
+			) and not parentName:find("station") and not fullPath:find("station") then
 				color = Color3.fromRGB(100, 255, 180)
 				labelText = "Heal"
-			elseif bloxyColaESP and (name:find("bloxycola") or name:find("cola")) then
+			elseif bloxyColaESP and (name:find("bloxycola") or name:find("bloxy cola") or name:find("cola")) then
 				color = Color3.fromRGB(255, 80, 80)
 				labelText = "Cola"
-			elseif crateESP and name == "crate" then
+			elseif crateESP and name == "crate" and isInteractiveCrate(obj) then
 				color = Color3.fromRGB(255, 200, 50)
 				labelText = "Crate"
 			end
@@ -333,6 +415,61 @@ task.spawn(function()
 	while true do
 		task.wait(3)
 		updateItemESP()
+	end
+end)
+
+-- ===================== ZOMBIE ESP (inside Player ESP) =====================
+local function clearZombieESP()
+	for obj, h in pairs(zombieHighlights) do
+		pcall(function() h:Destroy() end)
+	end
+	zombieHighlights = {}
+end
+
+local function updateZombieESP()
+	clearZombieESP()
+	if not espEnabled then return end
+
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		local name = string.lower(obj.Name)
+		if (obj:IsA("Model") or obj:IsA("BasePart")) and (name:find("zombiekingzombie") or name == "zombiekingzombie") then
+			local highlight = Instance.new("Highlight")
+			highlight.Adornee = obj
+			highlight.FillColor = Color3.fromRGB(0, 255, 80)
+			highlight.OutlineColor = Color3.fromRGB(0, 255, 80)
+			highlight.FillTransparency = 0.5
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.Parent = obj
+			zombieHighlights[obj] = highlight
+
+			local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+			if part then
+				local bb = Instance.new("BillboardGui")
+				bb.Adornee = part
+				bb.Size = UDim2.new(0, 70, 0, 18)
+				bb.StudsOffset = Vector3.new(0, 3, 0)
+				bb.AlwaysOnTop = true
+				bb.MaxDistance = 250
+				bb.Parent = obj
+
+				local label = Instance.new("TextLabel")
+				label.Size = UDim2.new(1, 0, 1, 0)
+				label.BackgroundTransparency = 1
+				label.Text = "Zombie"
+				label.TextColor3 = Color3.fromRGB(0, 255, 80)
+				label.TextStrokeTransparency = 0.3
+				label.Font = Enum.Font.GothamBold
+				label.TextSize = 12
+				label.Parent = bb
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(2)
+		updateZombieESP()
 	end
 end)
 
@@ -452,6 +589,7 @@ local function updateESP()
 	if not espEnabled then
 		for plr in pairs(highlights) do cleanup(plr) end
 		clearTrapRebel()
+		clearZombieESP()
 		return
 	end
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -477,44 +615,44 @@ end)
 
 Players.PlayerRemoving:Connect(cleanup)
 
--- ===================== CARRY / REVIVE =====================
+-- ===================== CARRY / REVIVE (MAP-WIDE) =====================
 local CharacterEvents = ReplicatedStorage:FindFirstChild("RemoteEvents") and ReplicatedStorage.RemoteEvents:FindFirstChild("CharacterEvents")
 local RequestCarry = CharacterEvents and CharacterEvents:FindFirstChild("RequestCarry")
 local RequestRevive = CharacterEvents and CharacterEvents:FindFirstChild("RequestRevive")
 
-local function getClosestDowned()
-	local closest, shortest = nil, 40
-	local myRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-	if not myRoot then return end
+local function getDownedSurvivors()
+	local downed = {}
 	for _, plr in ipairs(Players:GetPlayers()) do
 		if plr ~= LP and plr.Character and isSurvivor(plr) then
 			local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-			local root = plr.Character:FindFirstChild("HumanoidRootPart")
-			if hum and root and hum.Health > 0 and hum.Health < hum.MaxHealth * 0.4 then
-				local dist = (myRoot.Position - root.Position).Magnitude
-				if dist < shortest then shortest = dist closest = plr.Character end
+			if hum and hum.Health > 0 and hum.Health < hum.MaxHealth * 0.4 then
+				table.insert(downed, plr.Character)
 			end
 		end
 	end
-	return closest
+	return downed
 end
 
 task.spawn(function()
 	while true do
-		task.wait(1)
+		task.wait(1.2)
 		if autoCarry and RequestCarry then
-			local t = getClosestDowned()
-			if t then pcall(function() RequestCarry:FireServer(t) end) end
+			for _, target in ipairs(getDownedSurvivors()) do
+				pcall(function() RequestCarry:FireServer(target) end)
+				task.wait(0.3)
+			end
 		end
 	end
 end)
 
 task.spawn(function()
 	while true do
-		task.wait(1)
+		task.wait(1.2)
 		if autoRevive and RequestRevive then
-			local t = getClosestDowned()
-			if t then pcall(function() RequestRevive:FireServer(t) end) end
+			for _, target in ipairs(getDownedSurvivors()) do
+				pcall(function() RequestRevive:FireServer(target) end)
+				task.wait(0.3)
+			end
 		end
 	end
 end)
@@ -535,7 +673,8 @@ SurvivorTab:Toggle({ Title = "Auto Carry", Value = false, Callback = function(v)
 SurvivorTab:Toggle({ Title = "Auto Revive", Value = false, Callback = function(v) autoRevive = v end })
 SurvivorTab:Toggle({ Title = "Auto Wirebox", Value = false, Callback = function(v) autoWirebox = v end })
 SurvivorTab:Toggle({ Title = "Auto Pickup Hammer", Value = false, Callback = function(v) autoHammer = v end })
-SurvivorTab:Paragraph({ Title = "Info", Desc = "Auto Wirebox waits 7-12 seconds" })
+SurvivorTab:Toggle({ Title = "Auto Escape", Value = false, Callback = function(v) autoEscape = v end })
+SurvivorTab:Paragraph({ Title = "Info", Desc = "Auto Wirebox: 8-12s delay (one at a time)\nAuto Revive/Carry = map-wide\nAuto Escape near helicopter" })
 
 local VisualsTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisualsTab:Toggle({
@@ -546,10 +685,11 @@ VisualsTab:Toggle({
 		if not v then
 			for plr in pairs(highlights) do cleanup(plr) end
 			clearTrapRebel()
+			clearZombieESP()
 		end
 	end
 })
-VisualsTab:Paragraph({ Title = "Note", Desc = "Trap + Rebel ESP included with Player ESP" })
+VisualsTab:Paragraph({ Title = "Note", Desc = "Includes: Trap + Rebel + Zombie ESP" })
 VisualsTab:Toggle({ Title = "Gas Canister ESP", Value = false, Callback = function(v) gasESP = v updateItemESP() end })
 VisualsTab:Toggle({ Title = "Medkit ESP", Value = false, Callback = function(v) medkitESP = v updateItemESP() end })
 VisualsTab:Toggle({ Title = "Wirebox ESP", Value = false, Callback = function(v) wireboxESP = v updateItemESP() end })
