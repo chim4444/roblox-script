@@ -1,5 +1,5 @@
--- sth esp hub
--- windui + hulk/survivor esp
+-- sth esp
+-- hulk + survivor split, auto refresh
 
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
@@ -18,7 +18,7 @@ local cfg = {
     survcol = Color3.fromRGB(0, 170, 255),
 }
 
-local draws = {} -- [plr] = {hl, bb, label}
+local draws = {}
 
 local function isHulk(plr)
     if not plr or not plr.Character then return false end
@@ -48,8 +48,8 @@ end
 local function wipe(plr)
     local d = draws[plr]
     if not d then return end
-    if d.hl then d.hl:Destroy() end
-    if d.bb then d.bb:Destroy() end
+    if d.hl then pcall(function() d.hl:Destroy() end) end
+    if d.bb then pcall(function() d.bb:Destroy() end) end
     draws[plr] = nil
 end
 
@@ -75,6 +75,7 @@ local function make(plr, hulk)
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent = c
     d.hl = hl
+    d.hulk = hulk
 
     local bb = Instance.new("BillboardGui")
     bb.Name = "sth_bb"
@@ -103,6 +104,13 @@ local function tickEsp()
     for plr, d in pairs(draws) do
         if not plr.Parent or not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then
             wipe(plr)
+            continue
+        end
+
+        -- role can change mid-round, recheck
+        local nowHulk = isHulk(plr)
+        if d.hulk ~= nowHulk then
+            make(plr, nowHulk)
             continue
         end
 
@@ -139,7 +147,7 @@ local function refresh()
         local h = isHulk(plr)
         local show = (h and cfg.hulk) or (not h and cfg.survivor)
         if show and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            if not draws[plr] then
+            if not draws[plr] or draws[plr].hulk ~= h then
                 make(plr, h)
             end
         else
@@ -148,10 +156,10 @@ local function refresh()
     end
 end
 
--- hooks
+-- auto hooks
 Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function()
-        task.wait(0.5)
+        task.wait(0.4)
         refresh()
     end)
 end)
@@ -160,7 +168,7 @@ Players.PlayerRemoving:Connect(wipe)
 
 for _, p in ipairs(Players:GetPlayers()) do
     p.CharacterAdded:Connect(function()
-        task.wait(0.5)
+        task.wait(0.4)
         refresh()
     end)
 end
@@ -173,7 +181,7 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(1.5)
+        task.wait(0.8)
         if cfg.hulk or cfg.survivor then
             refresh()
         end
@@ -243,18 +251,9 @@ tab:Slider({
     Callback = function(v) cfg.maxdist = v end,
 })
 
-tab:Button({
-    Title = "Refresh",
-    Icon = "refresh-cw",
-    Callback = function()
-        refresh()
-        WindUI:Notify({ Title = "esp", Content = "refreshed", Duration = 2 })
-    end,
-})
-
 WindUI:Notify({
     Title = "Survive the Hulk",
-    Content = "esp ready",
+    Content = "hulk + survivor split on",
     Icon = "eye",
     Duration = 3,
 })
