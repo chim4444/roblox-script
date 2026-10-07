@@ -1,5 +1,5 @@
 -- sth esp
--- hulk + survivor split, auto refresh
+-- hulk + survivor split, auto refresh 3s
 
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
@@ -107,7 +107,6 @@ local function tickEsp()
             continue
         end
 
-        -- role can change mid-round, recheck
         local nowHulk = isHulk(plr)
         if d.hulk ~= nowHulk then
             make(plr, nowHulk)
@@ -156,7 +155,6 @@ local function refresh()
     end
 end
 
--- auto hooks
 Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function()
         task.wait(0.4)
@@ -181,14 +179,13 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(0.8)
+        task.wait(3) -- 3 seconds
         if cfg.hulk or cfg.survivor then
             refresh()
         end
     end
 end)
 
--- ui
 local win = WindUI:CreateWindow({
     Title = "Survive the Hulk",
     Icon = "eye",
@@ -253,7 +250,7 @@ tab:Slider({
 
 WindUI:Notify({
     Title = "Survive the Hulk",
-    Content = "hulk + survivor split on",
+    Content = "auto refresh every 3s",
     Icon = "eye",
     Duration = 3,
 })
