@@ -1,5 +1,5 @@
 -- sth hub
--- esp + shop spins with result notify
+-- spin results: skip broke msgs, longer cooler reward notifs
 
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
@@ -39,51 +39,70 @@ pcall(function()
     end
 end)
 
+local function isBrokeMsg(s)
+    if not s then return false end
+    s = string.lower(tostring(s))
+    return s:find("not enough")
+        or s:find("enough money")
+        or s:find("enough cash")
+        or s:find("insufficient")
+        or s:find("can't afford")
+        or s:find("cant afford")
+        or s:find("no money")
+        or s:find("broke")
+        or s:find("need more")
+end
+
 local function formatResult(r)
-    if r == nil then return "no return" end
+    if r == nil then return nil end
     if type(r) == "string" or type(r) == "number" then
-        return tostring(r)
+        local s = tostring(r)
+        if isBrokeMsg(s) then return nil end
+        return s
     end
     if type(r) == "table" then
-        if r.Message and r.Message ~= "" then
+        -- skip failed / no money
+        if r.Success == false then
+            local msg = r.Message or r.Error or r.error
+            if isBrokeMsg(msg) or msg then return nil end
+            return nil
+        end
+        if r.Message and isBrokeMsg(r.Message) then return nil end
+
+        if r.Message and tostring(r.Message) ~= "" then
             return tostring(r.Message)
         end
-        local name = r.Result or r.Name or r.name or r.Item or r.item or r.Reward
+        local name = r.Result or r.Name or r.name or r.Item or r.Reward
         if name then
-            local extra = ""
-            if r.Unlocked == true then extra = " (unlocked)" end
-            if r.PityTriggered == true then extra = extra .. " [pity]" end
-            return tostring(name) .. extra
+            local tag = ""
+            if r.Unlocked == true then tag = " · unlocked" end
+            if r.PityTriggered == true then tag = tag .. " · pity" end
+            return tostring(name) .. tag
         end
-        local parts = {}
-        for k, v in pairs(r) do
-            if type(v) ~= "table" then
-                table.insert(parts, tostring(k) .. "=" .. tostring(v))
-            end
-        end
-        return #parts > 0 and table.concat(parts, ", ") or "table"
+        return nil
     end
-    return tostring(r)
+    return nil
+end
+
+local function notifyReward(label, text)
+    if not text or text == "" then return end
+    WindUI:Notify({
+        Title = label,
+        Content = text,
+        Duration = 5.5,
+        Icon = "sparkles",
+    })
 end
 
 local function doSpin(remote, label)
-    if not remote then
-        WindUI:Notify({ Title = "Shop", Content = label .. " remote missing", Duration = 2 })
-        return
-    end
+    if not remote then return end
     local ok, result = pcall(function()
         return remote:InvokeServer()
     end)
-    if not ok then
-        WindUI:Notify({ Title = label, Content = "spin failed", Duration = 2 })
-        return
-    end
-    if cfg.showResults then
-        WindUI:Notify({
-            Title = label,
-            Content = formatResult(result),
-            Duration = 3.5,
-        })
+    if not ok or not cfg.showResults then return end
+    local text = formatResult(result)
+    if text then
+        notifyReward(label, text)
     end
 end
 
@@ -91,7 +110,7 @@ local function startAbility()
     if abilityConn or not abilityRemote then return end
     abilityConn = task.spawn(function()
         while cfg.abilitySpin do
-            doSpin(abilityRemote, "Ability")
+            doSpin(abilityRemote, "ability")
             task.wait(cfg.abilityDelay)
         end
         abilityConn = nil
@@ -107,7 +126,7 @@ local function startSkin()
     if skinConn or not skinRemote then return end
     skinConn = task.spawn(function()
         while cfg.skinSpin do
-            doSpin(skinRemote, "Skin")
+            doSpin(skinRemote, "skin")
             task.wait(cfg.skinDelay)
         end
         skinConn = nil
@@ -123,7 +142,7 @@ local function startEmote()
     if emoteConn or not emoteRemote then return end
     emoteConn = task.spawn(function()
         while cfg.emoteSpin do
-            doSpin(emoteRemote, "Emote")
+            doSpin(emoteRemote, "emote")
             task.wait(cfg.emoteDelay)
         end
         emoteConn = nil
@@ -366,10 +385,9 @@ tab:Slider({
     Callback = function(v) cfg.maxdist = v end,
 })
 
--- Shop
 shop:Toggle({
-    Title = "Show Spin Results",
-    Desc = "notify what you got",
+    Title = "Show Results",
+    Desc = "only real pulls, no broke spam",
     Value = true,
     Flag = "showResults",
     Callback = function(v) cfg.showResults = v end,
@@ -380,21 +398,16 @@ shop:Section({ Title = "Ability" })
 
 shop:Toggle({
     Title = "Auto Spin",
-    Desc = "keeps spinning abilities",
+    Desc = "abilities",
     Value = false,
     Flag = "abilitySpin",
     Callback = function(v)
         cfg.abilitySpin = v
         if v then
-            if not abilityRemote then
-                WindUI:Notify({ Title = "Shop", Content = "AbilitySpin missing", Duration = 3 })
-                return
-            end
+            if not abilityRemote then return end
             startAbility()
-            WindUI:Notify({ Title = "Shop", Content = "ability auto on", Duration = 2 })
         else
             stopAbility()
-            WindUI:Notify({ Title = "Shop", Content = "ability auto off", Duration = 2 })
         end
     end,
 })
@@ -411,9 +424,7 @@ shop:Slider({
 shop:Button({
     Title = "Spin Once",
     Icon = "refresh-cw",
-    Callback = function()
-        doSpin(abilityRemote, "Ability")
-    end,
+    Callback = function() doSpin(abilityRemote, "ability") end,
 })
 
 shop:Space()
@@ -421,21 +432,16 @@ shop:Section({ Title = "Hulk Skins" })
 
 shop:Toggle({
     Title = "Auto Spin",
-    Desc = "keeps spinning skins",
+    Desc = "skins",
     Value = false,
     Flag = "skinSpin",
     Callback = function(v)
         cfg.skinSpin = v
         if v then
-            if not skinRemote then
-                WindUI:Notify({ Title = "Shop", Content = "Spin remote missing", Duration = 3 })
-                return
-            end
+            if not skinRemote then return end
             startSkin()
-            WindUI:Notify({ Title = "Shop", Content = "skin auto on", Duration = 2 })
         else
             stopSkin()
-            WindUI:Notify({ Title = "Shop", Content = "skin auto off", Duration = 2 })
         end
     end,
 })
@@ -452,9 +458,7 @@ shop:Slider({
 shop:Button({
     Title = "Spin Once",
     Icon = "refresh-cw",
-    Callback = function()
-        doSpin(skinRemote, "Skin")
-    end,
+    Callback = function() doSpin(skinRemote, "skin") end,
 })
 
 shop:Space()
@@ -462,21 +466,16 @@ shop:Section({ Title = "Emotes" })
 
 shop:Toggle({
     Title = "Auto Spin",
-    Desc = "keeps spinning emotes",
+    Desc = "emotes",
     Value = false,
     Flag = "emoteSpin",
     Callback = function(v)
         cfg.emoteSpin = v
         if v then
-            if not emoteRemote then
-                WindUI:Notify({ Title = "Shop", Content = "EmoteSpin missing", Duration = 3 })
-                return
-            end
+            if not emoteRemote then return end
             startEmote()
-            WindUI:Notify({ Title = "Shop", Content = "emote auto on", Duration = 2 })
         else
             stopEmote()
-            WindUI:Notify({ Title = "Shop", Content = "emote auto off", Duration = 2 })
         end
     end,
 })
@@ -493,15 +492,13 @@ shop:Slider({
 shop:Button({
     Title = "Spin Once",
     Icon = "refresh-cw",
-    Callback = function()
-        doSpin(emoteRemote, "Emote")
-    end,
+    Callback = function() doSpin(emoteRemote, "emote") end,
 })
 
 WindUI:Notify({
-    Title = "Survive the Hulk",
-    Content = "spin results on",
-    Duration = 3,
+    Title = "sth",
+    Content = "up",
+    Duration = 2,
 })
 
 print("sth hub up")
