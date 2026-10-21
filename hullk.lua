@@ -1,109 +1,338 @@
--- sth hub
--- spin results: skip broke msgs, longer cooler reward notifs
+-- survive the hulk hub
+-- never ESP self | colors kept | smooth plastic | fixed hl | anti afk | hb | 600hp
 
-local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local lp = Players.LocalPlayer
+local rs = game:GetService("RunService")
+local stats = game:GetService("Stats")
+local rep = game:GetService("ReplicatedStorage")
+local vu = game:GetService("VirtualUser")
+local lighting = game:GetService("Lighting")
+
+pcall(function()
+    local old = lp.PlayerGui:FindFirstChild("PerfHud")
+    if old then old:Destroy() end
+end)
+
+-- anti afk always on
+lp.Idled:Connect(function()
+    pcall(function()
+        vu:CaptureController()
+        vu:ClickButton2(Vector2.new())
+    end)
+end)
+
+local skinSys = rep:FindFirstChild("HulkSkinSystem")
+local abilityRemote = skinSys and skinSys:FindFirstChild("AbilitySpin")
+local skinRemote = skinSys and skinSys:FindFirstChild("Spin")
+local emoteRemote = skinSys and skinSys:FindFirstChild("EmoteSpin")
 
 local cfg = {
-    hulk = false,
-    survivor = false,
+    hulkEsp = true,
+    survEsp = true,
+    hbEsp = true,
     names = true,
-    dist = true,
     hp = true,
-    maxdist = 2000,
-    hulkcol = Color3.fromRGB(0, 255, 80),
-    survcol = Color3.fromRGB(0, 170, 255),
+    dist = true,
+    maxDist = 2000,
+
+    hulkCol = Color3.fromRGB(80, 255, 120),
+    survCol = Color3.fromRGB(80, 200, 255),
+    hbCol = Color3.fromRGB(255, 160, 40),
+
     abilitySpin = false,
+    abilityDelay = 0.35,
     skinSpin = false,
+    skinDelay = 0.35,
     emoteSpin = false,
-    abilityDelay = 0.15,
-    skinDelay = 0.15,
-    emoteDelay = 0.15,
-    showResults = true,
+    emoteDelay = 0.35,
+
+    fastMode = false,
 }
 
 local draws = {}
 local abilityConn, skinConn, emoteConn
+local savedMaterials = {}
+local savedLighting = {}
 
-local abilityRemote, skinRemote, emoteRemote
-pcall(function()
-    local sys = ReplicatedStorage:WaitForChild("HulkSkinSystem", 5)
-    if sys then
-        abilityRemote = sys:FindFirstChild("AbilitySpin")
-        skinRemote = sys:FindFirstChild("Spin")
-        emoteRemote = sys:FindFirstChild("EmoteSpin")
+local function isHulk(plr)
+    local char = plr.Character
+    if not char then return false end
+    if plr:GetAttribute("IsHulk") or plr:GetAttribute("Hulk") then return true end
+    if char:FindFirstChild("Hulk") then return true end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.HipHeight and hum.HipHeight > 3 then return true end
+    if plr.Team and tostring(plr.Team):lower():find("hulk") then return true end
+    return false
+end
+
+local function isHulkbuster(plr)
+    local char = plr.Character
+    if not char then return false end
+    if plr:GetAttribute("Hulkbuster") or plr:GetAttribute("IsHulkbuster") or plr:GetAttribute("InHulkbuster") then return true end
+    if char:GetAttribute("Hulkbuster") then return true end
+    if char:FindFirstChild("Hulkbuster") or char:FindFirstChild("HulkbusterVisual") then return true end
+    if char:FindFirstChild("HulkbusterAnimationController") then return true end
+    if char:FindFirstChild("HulkbusterVisualWeld", true) then return true end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.MaxHealth >= 500 and not isHulk(plr) then return true end
+    return false
+end
+
+local function getRole(plr)
+    if isHulk(plr) then return "hulk" end
+    if isHulkbuster(plr) then return "hb" end
+    return "surv"
+end
+
+local function getHp(plr)
+    local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return 0, 100 end
+    return math.floor(hum.Health), math.floor(hum.MaxHealth)
+end
+
+local function clearPlr(plr)
+    local d = draws[plr]
+    if not d then return end
+    pcall(function() if d.hl then d.hl:Destroy() end end)
+    pcall(function() if d.bb then d.bb:Destroy() end end)
+    draws[plr] = nil
+end
+
+-- NEVER make ESP on yourself
+local function make(plr)
+    if plr == lp then return end
+    if draws[plr] then return end
+    local char = plr.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local role = getRole(plr)
+    local col = role == "hulk" and cfg.hulkCol or (role == "hb" and cfg.hbCol or cfg.survCol)
+
+    local hl = Instance.new("Highlight")
+    hl.Name = "STH_HL"
+    hl.Adornee = char
+    hl.FillColor = col
+    hl.OutlineColor = col
+    hl.FillTransparency = 0.5
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Enabled = true
+    hl.Parent = char
+
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "STH_BB"
+    bb.Adornee = root
+    bb.Size = UDim2.new(0, 160, 0, 42)
+    bb.StudsOffset = Vector3.new(0, 3.4, 0)
+    bb.AlwaysOnTop = true
+    bb.Enabled = true
+    bb.Parent = root
+
+    local txt = Instance.new("TextLabel")
+    txt.Size = UDim2.new(1, 0, 1, 0)
+    txt.BackgroundTransparency = 1
+    txt.Font = Enum.Font.GothamBold
+    txt.TextSize = 13
+    txt.TextColor3 = col
+    txt.TextStrokeTransparency = 0.4
+    txt.Text = plr.Name
+    txt.Parent = bb
+
+    draws[plr] = {
+        hl = hl, bb = bb, txt = txt,
+        role = role, lastHp = -1, lastDist = -1, lastText = "",
+    }
+end
+
+local function updateOne(plr, myRoot)
+    if plr == lp then
+        clearPlr(plr)
+        return
+    end
+    local d = draws[plr]
+    if not d then return end
+
+    local char = plr.Character
+    if not char or not char.Parent then
+        clearPlr(plr)
+        return
+    end
+
+    if not d.hl or not d.hl.Parent then
+        local role = d.role or getRole(plr)
+        local col = role == "hulk" and cfg.hulkCol or (role == "hb" and cfg.hbCol or cfg.survCol)
+        local hl = Instance.new("Highlight")
+        hl.Name = "STH_HL"
+        hl.Adornee = char
+        hl.FillColor = col
+        hl.OutlineColor = col
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Enabled = true
+        hl.Parent = char
+        d.hl = hl
+    end
+
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local role = d.role
+    local roleOn = (role == "hulk" and cfg.hulkEsp)
+        or (role == "hb" and cfg.hbEsp)
+        or (role == "surv" and cfg.survEsp)
+
+    local dist = myRoot and (myRoot.Position - root.Position).Magnitude or 0
+    local show = roleOn and dist <= cfg.maxDist
+
+    d.hl.Enabled = show
+    d.hl.Adornee = char
+
+    local wantBb = show and (cfg.names or cfg.hp or cfg.dist)
+    if d.bb then d.bb.Enabled = wantBb end
+    if not show then return end
+
+    local cur, max = getHp(plr)
+    local strong = (role ~= "hulk") and cur >= 600
+
+    if strong then
+        d.hl.FillTransparency = 0.25
+        d.hl.OutlineTransparency = 0
+        d.hl.FillColor = Color3.fromRGB(255, 70, 70)
+        d.hl.OutlineColor = Color3.fromRGB(255, 30, 30)
+        if d.txt then d.txt.TextColor3 = Color3.fromRGB(255, 120, 120) end
+    else
+        local col = role == "hulk" and cfg.hulkCol or (role == "hb" and cfg.hbCol or cfg.survCol)
+        d.hl.FillTransparency = 0.5
+        d.hl.OutlineTransparency = 0
+        d.hl.FillColor = col
+        d.hl.OutlineColor = col
+        if d.txt then d.txt.TextColor3 = col end
+    end
+
+    local distI = math.floor(dist)
+    if cur ~= d.lastHp or distI ~= d.lastDist then
+        local bits = {}
+        if cfg.names then bits[#bits + 1] = plr.Name end
+        if cfg.hp then bits[#bits + 1] = string.format("%d/%d", cur, max) end
+        if cfg.dist then bits[#bits + 1] = distI .. "m" end
+        if role == "hb" then bits[#bits + 1] = "[HB]" end
+        local text = table.concat(bits, " | ")
+        if d.txt and text ~= d.lastText then
+            d.txt.Text = text
+            d.lastText = text
+        end
+        d.lastHp = cur
+        d.lastDist = distI
+    end
+end
+
+local function tickEsp()
+    if not (cfg.hulkEsp or cfg.survEsp or cfg.hbEsp) then
+        for _, d in pairs(draws) do
+            if d.hl then d.hl.Enabled = false end
+            if d.bb then d.bb.Enabled = false end
+        end
+        return
+    end
+    local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    for plr in pairs(draws) do
+        updateOne(plr, myRoot)
+    end
+end
+
+task.spawn(function()
+    while true do
+        if cfg.hulkEsp or cfg.survEsp or cfg.hbEsp then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= lp and plr.Character and not draws[plr] then
+                    make(plr)
+                end
+            end
+            for plr in pairs(draws) do
+                if plr == lp or not plr.Parent then
+                    clearPlr(plr)
+                end
+            end
+        end
+        task.wait(1.5)
     end
 end)
 
+task.spawn(function()
+    while true do
+        task.wait(3)
+        for plr, d in pairs(draws) do
+            if plr ~= lp and plr.Character then
+                local r = getRole(plr)
+                if r ~= d.role then
+                    d.role = r
+                    d.lastHp = -1
+                end
+            end
+        end
+    end
+end)
+
+rs.Heartbeat:Connect(tickEsp)
+
+Players.PlayerRemoving:Connect(clearPlr)
+Players.PlayerAdded:Connect(function(plr)
+    if plr == lp then return end
+    plr.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        clearPlr(plr)
+        if cfg.hulkEsp or cfg.survEsp or cfg.hbEsp then make(plr) end
+    end)
+end)
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= lp then
+        plr.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            clearPlr(plr)
+            if cfg.hulkEsp or cfg.survEsp or cfg.hbEsp then make(plr) end
+        end)
+        if plr.Character then make(plr) end
+    end
+end
+
+-- spins
 local function isBrokeMsg(s)
     if not s then return false end
-    s = string.lower(tostring(s))
-    return s:find("not enough")
-        or s:find("enough money")
-        or s:find("enough cash")
-        or s:find("insufficient")
-        or s:find("can't afford")
-        or s:find("cant afford")
-        or s:find("no money")
-        or s:find("broke")
-        or s:find("need more")
+    s = tostring(s):lower()
+    return s:find("not enough") or s:find("insufficient") or s:find("broke") or s:find("can't afford") or s:find("cannot afford") or s:find("no money")
 end
 
-local function formatResult(r)
-    if r == nil then return nil end
-    if type(r) == "string" or type(r) == "number" then
-        local s = tostring(r)
-        if isBrokeMsg(s) then return nil end
+local function formatResult(res)
+    if type(res) ~= "table" then
+        local s = tostring(res or "")
+        if isBrokeMsg(s) or s == "" or s == "nil" then return nil end
         return s
     end
-    if type(r) == "table" then
-        -- skip failed / no money
-        if r.Success == false then
-            local msg = r.Message or r.Error or r.error
-            if isBrokeMsg(msg) or msg then return nil end
-            return nil
-        end
-        if r.Message and isBrokeMsg(r.Message) then return nil end
-
-        if r.Message and tostring(r.Message) ~= "" then
-            return tostring(r.Message)
-        end
-        local name = r.Result or r.Name or r.name or r.Item or r.Reward
-        if name then
-            local tag = ""
-            if r.Unlocked == true then tag = " · unlocked" end
-            if r.PityTriggered == true then tag = tag .. " · pity" end
-            return tostring(name) .. tag
-        end
-        return nil
-    end
-    return nil
+    local msg = res.Message or res.message
+    if isBrokeMsg(msg) then return nil end
+    if res.Success == false and not msg then return nil end
+    local line = msg or res.Result or res.Unlocked or "hit something"
+    if res.PityTriggered then line = line .. "  (pity)" end
+    return tostring(line)
 end
 
-local function notifyReward(label, text)
-    if not text or text == "" then return end
-    WindUI:Notify({
-        Title = label,
-        Content = text,
-        Duration = 5.5,
-        Icon = "sparkles",
-    })
-end
-
-local function doSpin(remote, label)
-    if not remote then return end
-    local ok, result = pcall(function()
-        return remote:InvokeServer()
+local function notifyReward(title, body)
+    if not body then return end
+    pcall(function()
+        WindUI:Notify({ Title = title, Content = body, Duration = 5.5 })
     end)
-    if not ok or not cfg.showResults then return end
-    local text = formatResult(result)
-    if text then
-        notifyReward(label, text)
-    end
+end
+
+local function doSpin(remote, title)
+    if not remote then return end
+    local ok, res = pcall(function() return remote:InvokeServer() end)
+    if ok then notifyReward(title, formatResult(res)) end
 end
 
 local function startAbility()
@@ -116,11 +345,7 @@ local function startAbility()
         abilityConn = nil
     end)
 end
-
-local function stopAbility()
-    cfg.abilitySpin = false
-    abilityConn = nil
-end
+local function stopAbility() cfg.abilitySpin = false end
 
 local function startSkin()
     if skinConn or not skinRemote then return end
@@ -132,11 +357,7 @@ local function startSkin()
         skinConn = nil
     end)
 end
-
-local function stopSkin()
-    cfg.skinSpin = false
-    skinConn = nil
-end
+local function stopSkin() cfg.skinSpin = false end
 
 local function startEmote()
     if emoteConn or not emoteRemote then return end
@@ -148,357 +369,152 @@ local function startEmote()
         emoteConn = nil
     end)
 end
+local function stopEmote() cfg.emoteSpin = false end
 
-local function stopEmote()
-    cfg.emoteSpin = false
-    emoteConn = nil
-end
+-- Fast Mode: keep colors, only SmoothPlastic
+local function setFast(on)
+    cfg.fastMode = on
 
--- esp
-local function isHulk(plr)
-    if not plr or not plr.Character then return false end
-    local c = plr.Character
-    if c:FindFirstChild("Hulk") or c:FindFirstChild("IsHulk") then return true end
-    if plr:GetAttribute("Role") == "Hulk" or plr:GetAttribute("IsHulk") then return true end
-    if plr.Team then
-        local t = tostring(plr.Team.Name):lower()
-        if t:find("hulk") or t:find("killer") then return true end
+    local names = {"FacilityDustClient", "CombatEffectsClient", "SpiderManFxClient", "SpiderManClient"}
+    local function setDisabled(name, state)
+        local s = lp:FindFirstChild("PlayerScripts") and lp.PlayerScripts:FindFirstChild(name)
+        if s and s:IsA("LocalScript") then s.Disabled = state end
+        local sp = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
+        local s2 = sp and sp:FindFirstChild(name)
+        if s2 and s2:IsA("LocalScript") then s2.Disabled = state end
     end
-    local hum = c:FindFirstChildOfClass("Humanoid")
-    if hum and hum.HipHeight > 4 then return true end
-    if c.Name:lower():find("hulk") then return true end
-    return false
-end
+    for _, n in ipairs(names) do setDisabled(n, on) end
 
-local function getHp(plr)
-    local c = plr.Character
-    if not c then return 0, 100 end
-    local hum = c:FindFirstChildOfClass("Humanoid")
-    if hum then
-        return math.floor(hum.Health + 0.5), math.floor(hum.MaxHealth + 0.5)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Smoke") or obj:IsA("Fire")
+            or obj:IsA("Sparkles") or obj:IsA("Trail") or obj:IsA("Beam") then
+            obj.Enabled = not on
+        end
     end
-    return 0, 100
-end
 
-local function wipe(plr)
-    local d = draws[plr]
-    if not d then return end
-    if d.hl then pcall(function() d.hl:Destroy() end) end
-    if d.bb then pcall(function() d.bb:Destroy() end) end
-    draws[plr] = nil
-end
+    local cam = workspace:FindFirstChild("Camera")
+    if cam then
+        local holder = cam:FindFirstChild("FacilityDustHolder")
+        if holder and on then holder:Destroy() end
+    end
 
-local function make(plr, hulk)
-    if plr == lp then return end
-    wipe(plr)
-
-    local c = plr.Character
-    if not c then return end
-    local root = c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Torso") or c:FindFirstChild("UpperTorso")
-    if not root then return end
-
-    local col = hulk and cfg.hulkcol or cfg.survcol
-    local d = {}
-
-    local hl = Instance.new("Highlight")
-    hl.Name = "sth_hl"
-    hl.Adornee = c
-    hl.FillColor = col
-    hl.OutlineColor = col
-    hl.FillTransparency = 0.55
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Parent = c
-    d.hl = hl
-    d.hulk = hulk
-
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "sth_bb"
-    bb.Adornee = root
-    bb.Size = UDim2.new(0, 220, 0, 70)
-    bb.StudsOffset = Vector3.new(0, 3.4, 0)
-    bb.AlwaysOnTop = true
-    bb.Parent = c
-
-    local lab = Instance.new("TextLabel")
-    lab.Size = UDim2.new(1, 0, 1, 0)
-    lab.BackgroundTransparency = 1
-    lab.TextColor3 = col
-    lab.TextStrokeTransparency = 0.3
-    lab.Font = Enum.Font.GothamBold
-    lab.TextSize = 14
-    lab.Text = plr.Name
-    lab.Parent = bb
-
-    d.bb = bb
-    d.label = lab
-    draws[plr] = d
-end
-
-local function tickEsp()
-    for plr, d in pairs(draws) do
-        if not plr.Parent or not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then
-            wipe(plr)
-            continue
-        end
-
-        local nowHulk = isHulk(plr)
-        if d.hulk ~= nowHulk then
-            make(plr, nowHulk)
-            continue
-        end
-
-        local root = plr.Character.HumanoidRootPart
-        local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-        local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 9999
-
-        if dist > cfg.maxdist then
-            if d.hl then d.hl.Enabled = false end
-            if d.bb then d.bb.Enabled = false end
-        else
-            if d.hl then d.hl.Enabled = true end
-            if d.bb then d.bb.Enabled = true end
-
-            if d.label then
-                local lines = {}
-                if cfg.names then table.insert(lines, plr.Name) end
-                if cfg.hp then
-                    local hp, max = getHp(plr)
-                    table.insert(lines, "HP: "..hp.."/"..max)
+    if on then
+        savedMaterials = {}
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("UnionOperation") or obj:IsA("MeshPart") then
+                if not savedMaterials[obj] then
+                    savedMaterials[obj] = obj.Material
                 end
-                if cfg.dist then
-                    table.insert(lines, "["..math.floor(dist).."m]")
-                end
-                d.label.Text = table.concat(lines, "\n")
+                obj.Material = Enum.Material.SmoothPlastic
+                obj.MaterialVariant = ""
             end
         end
-    end
-end
 
-local function refresh()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == lp then continue end
-        local h = isHulk(plr)
-        local show = (h and cfg.hulk) or (not h and cfg.survivor)
-        if show and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            if not draws[plr] or draws[plr].hulk ~= h then
-                make(plr, h)
+        savedLighting = {
+            GlobalShadows = lighting.GlobalShadows,
+            Technology = lighting.Technology,
+        }
+        lighting.GlobalShadows = false
+        pcall(function() lighting.Technology = Enum.Technology.Compatibility end)
+
+        for _, name in ipairs({"Bloom", "Blur", "ColorCorrection", "DepthOfField", "HulkSkinSpinBlur", "SunRays"}) do
+            local fx = lighting:FindFirstChild(name)
+            if fx and (fx:IsA("PostEffect") or fx:IsA("BlurEffect") or fx:IsA("BloomEffect")
+                or fx:IsA("DepthOfFieldEffect") or fx:IsA("SunRaysEffect") or fx:IsA("ColorCorrectionEffect")) then
+                fx.Enabled = false
             end
-        else
-            wipe(plr)
         end
+        for _, fx in ipairs(lighting:GetChildren()) do
+            if fx:IsA("PostEffect") then fx.Enabled = false end
+        end
+    else
+        for part, mat in pairs(savedMaterials) do
+            pcall(function()
+                if part and part.Parent then
+                    part.Material = mat
+                end
+            end)
+        end
+        savedMaterials = {}
+        if savedLighting.GlobalShadows ~= nil then
+            lighting.GlobalShadows = savedLighting.GlobalShadows
+        end
+        pcall(function()
+            if savedLighting.Technology then
+                lighting.Technology = savedLighting.Technology
+            end
+        end)
     end
 end
-
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function()
-        task.wait(0.4)
-        refresh()
-    end)
-end)
-
-Players.PlayerRemoving:Connect(wipe)
-
-for _, p in ipairs(Players:GetPlayers()) do
-    p.CharacterAdded:Connect(function()
-        task.wait(0.4)
-        refresh()
-    end)
-end
-
-RunService.RenderStepped:Connect(function()
-    if cfg.hulk or cfg.survivor then
-        tickEsp()
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(3)
-        if cfg.hulk or cfg.survivor then
-            refresh()
-        end
-    end
-end)
 
 -- ui
 local win = WindUI:CreateWindow({
     Title = "Survive the Hulk",
     Icon = "",
     Theme = "Dark",
-    Folder = "sth",
+    Size = UDim2.fromOffset(520, 420),
 })
 
-local tab = win:Tab({ Title = "ESP", Icon = "eye" })
-local shop = win:Tab({ Title = "Shop", Icon = "dollar-sign" })
+local tabEsp = win:Tab({ Title = "ESP", Icon = "eye" })
+local tabShop = win:Tab({ Title = "Shop", Icon = "dollar-sign" })
+local tabMisc = win:Tab({ Title = "Misc", Icon = "settings" })
 
-tab:Toggle({
-    Title = "Hulk ESP",
-    Desc = "green highlight",
+tabEsp:Toggle({ Title = "Hulk ESP", Desc = "green highlight", Value = true, Callback = function(v) cfg.hulkEsp = v end })
+tabEsp:Toggle({ Title = "Survivor ESP", Desc = "cyan highlight", Value = true, Callback = function(v) cfg.survEsp = v end })
+tabEsp:Toggle({ Title = "Hulkbuster ESP", Desc = "orange highlight", Value = true, Callback = function(v) cfg.hbEsp = v end })
+tabEsp:Toggle({ Title = "Names", Value = true, Callback = function(v) cfg.names = v end })
+tabEsp:Toggle({ Title = "Health", Value = true, Callback = function(v) cfg.hp = v end })
+tabEsp:Toggle({ Title = "Distance", Value = true, Callback = function(v) cfg.dist = v end })
+tabEsp:Slider({ Title = "Max Distance", Value = { Min = 50, Max = 2000, Default = 2000 }, Callback = function(v) cfg.maxDist = v end })
+
+local secA = tabShop:Section({ Title = "Ability" })
+secA:Toggle({ Title = "Auto Spin", Value = false, Callback = function(v) cfg.abilitySpin = v if v then startAbility() else stopAbility() end end })
+secA:Slider({ Title = "Delay", Value = { Min = 0.15, Max = 2, Default = 0.35 }, Callback = function(v) cfg.abilityDelay = v end })
+secA:Button({ Title = "Spin Once", Callback = function() doSpin(abilityRemote, "ability") end })
+
+local secS = tabShop:Section({ Title = "Hulk Skin" })
+secS:Toggle({ Title = "Auto Spin", Value = false, Callback = function(v) cfg.skinSpin = v if v then startSkin() else stopSkin() end end })
+secS:Slider({ Title = "Delay", Value = { Min = 0.15, Max = 2, Default = 0.35 }, Callback = function(v) cfg.skinDelay = v end })
+secS:Button({ Title = "Spin Once", Callback = function() doSpin(skinRemote, "skin") end })
+
+local secE = tabShop:Section({ Title = "Emote" })
+secE:Toggle({ Title = "Auto Spin", Value = false, Callback = function(v) cfg.emoteSpin = v if v then startEmote() else stopEmote() end end })
+secE:Slider({ Title = "Delay", Value = { Min = 0.15, Max = 2, Default = 0.35 }, Callback = function(v) cfg.emoteDelay = v end })
+secE:Button({ Title = "Spin Once", Callback = function() doSpin(emoteRemote, "emote") end })
+
+tabMisc:Toggle({
+    Title = "Fast Mode",
+    Desc = "smooth plastic (keeps colors) + no shadows/fx/dust",
     Value = false,
-    Flag = "hulk",
-    Callback = function(v)
-        cfg.hulk = v
-        refresh()
-    end,
+    Callback = function(v) setFast(v) end
 })
 
-tab:Toggle({
-    Title = "Survivor ESP",
-    Desc = "cyan highlight",
-    Value = false,
-    Flag = "survivor",
-    Callback = function(v)
-        cfg.survivor = v
-        refresh()
-    end,
-})
+tabMisc:Section({ Title = "Stats" })
+local statsNote = tabMisc:Paragraph({ Title = "Live", Desc = "FPS: --\nPing: --" })
 
-tab:Space()
-
-tab:Toggle({
-    Title = "Names",
-    Value = true,
-    Flag = "names",
-    Callback = function(v) cfg.names = v end,
-})
-
-tab:Toggle({
-    Title = "Health",
-    Value = true,
-    Flag = "hp",
-    Callback = function(v) cfg.hp = v end,
-})
-
-tab:Toggle({
-    Title = "Distance",
-    Value = true,
-    Flag = "dist",
-    Callback = function(v) cfg.dist = v end,
-})
-
-tab:Slider({
-    Title = "Max Distance",
-    Step = 50,
-    Value = { Min = 100, Max = 3000, Default = 2000 },
-    Flag = "maxdist",
-    Callback = function(v) cfg.maxdist = v end,
-})
-
-shop:Toggle({
-    Title = "Show Results",
-    Desc = "only real pulls, no broke spam",
-    Value = true,
-    Flag = "showResults",
-    Callback = function(v) cfg.showResults = v end,
-})
-
-shop:Space()
-shop:Section({ Title = "Ability" })
-
-shop:Toggle({
-    Title = "Auto Spin",
-    Desc = "abilities",
-    Value = false,
-    Flag = "abilitySpin",
-    Callback = function(v)
-        cfg.abilitySpin = v
-        if v then
-            if not abilityRemote then return end
-            startAbility()
-        else
-            stopAbility()
+task.spawn(function()
+    local frames, last = 0, tick()
+    rs.Heartbeat:Connect(function()
+        frames += 1
+        local now = tick()
+        if now - last >= 1 then
+            local fps = frames
+            frames = 0
+            last = now
+            local ping = 0
+            pcall(function()
+                ping = math.floor(stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+            end)
+            pcall(function()
+                if statsNote and statsNote.SetDesc then
+                    statsNote:SetDesc(string.format("FPS: %d\nPing: %dms", fps, ping))
+                end
+            end)
         end
-    end,
-})
+    end)
+end)
 
-shop:Slider({
-    Title = "Speed",
-    Desc = "lower = faster",
-    Step = 0.01,
-    Value = { Min = 0.05, Max = 0.40, Default = 0.15 },
-    Flag = "abilityDelay",
-    Callback = function(v) cfg.abilityDelay = v end,
-})
+-- safety: never keep self in draws
+clearPlr(lp)
 
-shop:Button({
-    Title = "Spin Once",
-    Icon = "refresh-cw",
-    Callback = function() doSpin(abilityRemote, "ability") end,
-})
-
-shop:Space()
-shop:Section({ Title = "Hulk Skins" })
-
-shop:Toggle({
-    Title = "Auto Spin",
-    Desc = "skins",
-    Value = false,
-    Flag = "skinSpin",
-    Callback = function(v)
-        cfg.skinSpin = v
-        if v then
-            if not skinRemote then return end
-            startSkin()
-        else
-            stopSkin()
-        end
-    end,
-})
-
-shop:Slider({
-    Title = "Speed",
-    Desc = "lower = faster",
-    Step = 0.01,
-    Value = { Min = 0.05, Max = 0.40, Default = 0.15 },
-    Flag = "skinDelay",
-    Callback = function(v) cfg.skinDelay = v end,
-})
-
-shop:Button({
-    Title = "Spin Once",
-    Icon = "refresh-cw",
-    Callback = function() doSpin(skinRemote, "skin") end,
-})
-
-shop:Space()
-shop:Section({ Title = "Emotes" })
-
-shop:Toggle({
-    Title = "Auto Spin",
-    Desc = "emotes",
-    Value = false,
-    Flag = "emoteSpin",
-    Callback = function(v)
-        cfg.emoteSpin = v
-        if v then
-            if not emoteRemote then return end
-            startEmote()
-        else
-            stopEmote()
-        end
-    end,
-})
-
-shop:Slider({
-    Title = "Speed",
-    Desc = "lower = faster",
-    Step = 0.01,
-    Value = { Min = 0.05, Max = 0.40, Default = 0.15 },
-    Flag = "emoteDelay",
-    Callback = function(v) cfg.emoteDelay = v end,
-})
-
-shop:Button({
-    Title = "Spin Once",
-    Icon = "refresh-cw",
-    Callback = function() doSpin(emoteRemote, "emote") end,
-})
-
-WindUI:Notify({
-    Title = "sth",
-    Content = "up",
-    Duration = 2,
-})
-
-print("sth hub up")
+print("sth hub loaded | ESP never on self")
