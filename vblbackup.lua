@@ -65,6 +65,7 @@ local facingConn = nil
 local silentSpikeEnabled = false
 local silentSpikeGui = nil
 
+
 -- ===================== SILENT SPIKE =====================
 local function getBallId()
 	for _, obj in pairs(Workspace:GetChildren()) do
@@ -81,11 +82,12 @@ local function doSilentSpike()
 	if not ballId then return end
 
 	local look = Camera.CFrame.LookVector
-	local lookFlat = Vector3.new(look.X, 0, look.Z)
-	if lookFlat.Magnitude > 0.001 then
-		lookFlat = lookFlat.Unit
+	local lx, lz = look.X, look.Z
+	local mag = math.sqrt(lx*lx + lz*lz)
+	if mag > 0.001 then
+		lx, lz = lx / mag, lz / mag
 	else
-		lookFlat = Vector3.new(0, 0, -1)
+		lx, lz = 0, -1
 	end
 
 	local Interact = ReplicatedStorage.Packages._Index["sleitnick_knit@1.7.0"].knit.Services.BallService.RF.Interact
@@ -96,8 +98,8 @@ local function doSilentSpike()
 			Move = "Spike",
 			SpecialCharge = 0,
 			TiltDirection = Vector3.yAxis,
-			LookVector = lookFlat,
-			MoveDirection = Vector3.zero,
+			LookVector = vector.create(lx, 0, lz),
+			MoveDirection = vector.zero,
 			ClientCanRunSpecial = false,
 			From = "Client",
 			Timestamp = workspace:GetServerTimeNow(),
@@ -168,6 +170,7 @@ local function createSilentSpikeButton()
 		end
 	end)
 end
+
 
 local function destroySilentSpikeButton()
 	if silentSpikeGui then
@@ -248,7 +251,7 @@ local function setupMaxHook()
 
 			if maxServeEnabled and name == "Serve" then
 				if typeof(args[2]) == "number" then
-					args[2] = 0.99 + math.random() * 0.01
+					args[2] = 999
 				end
 				return maxHook(self, unpack(args))
 			end
@@ -278,6 +281,8 @@ local function setMaxSpike(state)
 	maxSpikeEnabled = state
 	if state then setupMaxHook() end
 end
+
+
 
 -- ===================== DESYNC =====================
 local function applyDesync(state)
