@@ -45,6 +45,7 @@ local hitboxConn = nil
 
 local maxServeEnabled = false
 local maxSpikeEnabled = false
+local maxSpikeCharge = 0.95
 local maxHook = nil
 
 local shiftlockEnabled = false
@@ -57,7 +58,7 @@ local espEnabled = false
 local espBeams = {}
 
 local facingUntil = 0
-local faceTime = 0.18
+local faceTime = 0.05
 local facingConn = nil
 
 -- Silent Spike
@@ -134,7 +135,6 @@ local function createSilentSpikeButton()
 
 	Btn.MouseButton1Click:Connect(doSilentSpike)
 
-	-- Non-snapping drag
 	local dragging = false
 	local dragInput, dragStart, startPos
 
@@ -248,7 +248,7 @@ local function setupMaxHook()
 
 			if maxServeEnabled and name == "Serve" then
 				if typeof(args[2]) == "number" then
-					args[2] = 0.94 + math.random() * 0.05
+					args[2] = 0.99 + math.random() * 0.01
 				end
 				return maxHook(self, unpack(args))
 			end
@@ -257,9 +257,8 @@ local function setupMaxHook()
 				if typeof(args[1]) == "table" then
 					local data = args[1]
 					if data.Move == "Spike" then
-						local power = 0.93 + math.random() * 0.05
-						data.Charge = power
-						data.SpecialCharge = power
+						data.Charge = maxSpikeCharge
+						data.SpecialCharge = maxSpikeCharge
 					end
 				end
 				return maxHook(self, unpack(args))
@@ -814,6 +813,9 @@ function buildMain()
 	end)
 	makeToggle("Max Serve", maxServeEnabled, function(v) setMaxServe(v) end)
 	makeToggle("Auto TSH Max Spike", maxSpikeEnabled, function(v) setMaxSpike(v) end)
+	makeSlider("Spike Charge", 0.50, 1.00, maxSpikeCharge, function(v)
+		maxSpikeCharge = v
+	end)
 	makeToggle("Silent Spike Button", silentSpikeEnabled, function(v)
 		silentSpikeEnabled = v
 		if v then
@@ -858,5 +860,5 @@ end)
 
 task.defer(function()
 	switchTab("Main")
-	print("JOSSEPOPSIER loaded - Silent Spike added")
+	print("JOSSEPOPSIER loaded")
 end)
